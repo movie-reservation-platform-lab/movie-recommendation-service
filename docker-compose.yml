@@ -1,0 +1,45 @@
+services:
+  axum-tools-random-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: axum-tools-random-api
+    environment:
+      USE_DUMMY: "true"
+      PORT: "8082"
+      OTEL_SERVICE_NAME: axum-tools-random-api
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_RESOURCE_ATTRIBUTES: service.environment=local,demo.name=multi-service-observability
+    ports:
+      - "127.0.0.1:8082:8082"
+    labels:
+      observability.logs: "true"
+      service.name: "axum-tools-random-api"
+      service.environment: "local"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+
+  axum-tools-mcp:
+    build:
+      context: ./axum-tools-mcp
+      dockerfile: Dockerfile
+    container_name: axum-tools-mcp
+    environment:
+      AXUM_TOOLS_API_URL: http://axum-tools-random-api:8082
+      HOST: 0.0.0.0
+      PORT: "8092"
+      OTEL_SERVICE_NAME: axum-tools-mcp
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_RESOURCE_ATTRIBUTES: service.environment=local,demo.name=multi-service-observability
+    ports:
+      - "127.0.0.1:8092:8092"
+    labels:
+      observability.logs: "true"
+      service.name: "axum-tools-mcp"
+      service.environment: "local"
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    depends_on:
+      - axum-tools-random-api
