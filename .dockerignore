@@ -1,0 +1,9 @@
+.git
+target
+debug
+docs
+axum-tools-mcp/.venv
+axum-tools-mcp/__pycache__
+axum-tools-mcp/.pytest_cache
+**/__pycache__
+**/*.pyc
