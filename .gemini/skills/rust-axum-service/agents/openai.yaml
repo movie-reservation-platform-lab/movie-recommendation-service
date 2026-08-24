@@ -1,0 +1,4 @@
+interface:
+  display_name: "Rust Axum Service"
+  short_description: "Build safe observable Axum services"
+  default_prompt: "Use $rust-axum-service to implement or review this Axum service change."
