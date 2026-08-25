@@ -1,4 +1,0 @@
-interface:
-  display_name: "Rust Testing"
-  short_description: "Test Axum behavior and async failures"
-  default_prompt: "Use $rust-testing to design or update focused Rust tests for this service behavior."
