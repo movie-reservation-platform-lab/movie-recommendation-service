@@ -1,0 +1,3 @@
+type: skill
+skillName: rust-axum-service
+description: "Use when implementing or reviewing Rust/Axum handlers, typed contracts, Tokio async behavior, errors, configuration, telemetry, and graceful shutdown."
