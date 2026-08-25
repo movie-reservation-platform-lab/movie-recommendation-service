@@ -186,6 +186,11 @@ repositories promote the same digest; they must not rebuild this source or rely
 on a mutable tag. This repository does not own AWS resources or environment
 selection.
 
+Pushes to `main` publish a Linux AMD64 candidate to GHCR as `sha-<commit>`.
+CI disables BuildKit's automatic registry attestation to preserve the
+single-image manifest required by the first environment admission slice, then
+records explicit GitHub build provenance against the published digest.
+
 The baseline commit is reachable on the
 `demo-multi-service-observability` branch. Verify locally with:
 
@@ -197,11 +202,18 @@ git branch --all --contains 3ea72f3
 
 ```sh
 cargo fmt --all -- --check
-cargo check --all-targets
-cargo clippy --all-targets --all-features -- -D warnings
-cargo test --all-targets
-cargo build --release
+cargo check --all-targets --locked
+cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo test --all-targets --locked
+cargo build --release --locked
+node --test automation/tests/*.test.mjs
 ```
 
 When Docker is available, also run `docker build --check .` and a local image
-build. These commands verify an artifact only; they do not publish or deploy it.
+build, followed by:
+
+```sh
+bash automation/container-smoke.sh movie-recommendation-service:local
+```
+
+These commands verify an artifact only; they do not publish or deploy it.

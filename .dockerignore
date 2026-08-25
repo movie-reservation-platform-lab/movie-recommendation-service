@@ -1,4 +1,12 @@
 .git
+.github
+.ai
+.claude
+.codex
+.cursor
+.gemini
+.roo
+automation
 target
 debug
 docs
