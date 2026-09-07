@@ -1,4 +1,5 @@
 mod context;
+pub(crate) mod demo_auth;
 
 #[cfg(test)]
 mod tests;

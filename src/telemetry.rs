@@ -1,3 +1,4 @@
+use crate::audit::config::EventIdentity;
 use anyhow::{Context as _, Result};
 use opentelemetry::{
     global,
@@ -303,15 +304,19 @@ impl Telemetry {
     }
 }
 
-pub fn init(service_name: &'static str, otlp_endpoint: Option<&str>) -> Result<Telemetry> {
+pub fn init(
+    service_name: &'static str,
+    otlp_endpoint: Option<&str>,
+    identity: &EventIdentity,
+) -> Result<Telemetry> {
     global::set_text_map_propagator(TraceContextPropagator::new());
 
-    let tracer_provider = build_tracer_provider(service_name, otlp_endpoint);
+    let tracer_provider = build_tracer_provider(service_name, otlp_endpoint, identity);
     if let Some(provider) = &tracer_provider {
         global::set_tracer_provider(provider.clone());
     }
 
-    let meter_provider = build_meter_provider(service_name, otlp_endpoint);
+    let meter_provider = build_meter_provider(service_name, otlp_endpoint, identity);
     global::set_meter_provider(meter_provider.clone());
 
     init_tracing_subscriber(service_name, tracer_provider.as_ref())?;
@@ -344,6 +349,10 @@ fn init_tracing_subscriber(
 ) -> Result<()> {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     let fmt_layer = tracing_subscriber::fmt::layer()
+        .json()
+        .flatten_event(true)
+        .with_current_span(false)
+        .with_span_list(false)
         .with_target(false)
         .with_filter(env_filter);
     let otel_layer = tracer_provider.map(|provider| {
@@ -387,6 +396,7 @@ fn remaining_until(deadline: Instant) -> Duration {
 fn build_tracer_provider(
     service_name: &'static str,
     otlp_endpoint: Option<&str>,
+    identity: &EventIdentity,
 ) -> Option<SdkTracerProvider> {
     let otlp_endpoint = otlp_endpoint?;
     let trace_endpoint = signal_endpoint(otlp_endpoint, "v1/traces");
@@ -410,7 +420,7 @@ fn build_tracer_provider(
 
     Some(
         SdkTracerProvider::builder()
-            .with_resource(resource(service_name))
+            .with_resource(resource(service_name, identity))
             .with_batch_exporter(exporter)
             .build(),
     )
@@ -419,10 +429,11 @@ fn build_tracer_provider(
 fn build_meter_provider(
     service_name: &'static str,
     otlp_endpoint: Option<&str>,
+    identity: &EventIdentity,
 ) -> SdkMeterProvider {
     let Some(otlp_endpoint) = otlp_endpoint else {
         return SdkMeterProvider::builder()
-            .with_resource(resource(service_name))
+            .with_resource(resource(service_name, identity))
             .build();
     };
     let metric_endpoint = signal_endpoint(otlp_endpoint, "v1/metrics");
@@ -441,13 +452,13 @@ fn build_meter_provider(
                 "reason": "exporter_configuration_invalid"
             }));
             return SdkMeterProvider::builder()
-                .with_resource(resource(service_name))
+                .with_resource(resource(service_name, identity))
                 .build();
         }
     };
 
     SdkMeterProvider::builder()
-        .with_resource(resource(service_name))
+        .with_resource(resource(service_name, identity))
         .with_periodic_exporter(exporter)
         .build()
 }
@@ -456,9 +467,18 @@ fn signal_endpoint(base_endpoint: &str, signal_path: &str) -> String {
     format!("{}/{signal_path}", base_endpoint.trim_end_matches('/'))
 }
 
-fn resource(service_name: &'static str) -> Resource {
+fn resource(service_name: &'static str, identity: &EventIdentity) -> Resource {
     Resource::builder()
         .with_service_name(service_name)
+        .with_attribute(KeyValue::new("service.version", identity.version.clone()))
+        .with_attribute(KeyValue::new(
+            "deployment.environment.name",
+            identity.environment.clone(),
+        ))
+        .with_attribute(KeyValue::new(
+            "deployment.environment",
+            identity.environment.clone(),
+        ))
         .with_attribute(KeyValue::new("demo.name", "multi-service-observability"))
         .build()
 }
@@ -488,6 +508,23 @@ fn build_metrics(meter: Meter) -> TelemetryMetrics {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resources_share_audit_artifact_and_environment_identity() {
+        let identity = EventIdentity::from_values(Some("build-123"), Some("audit-demo")).unwrap();
+        let resource = resource(crate::SERVICE_NAME, &identity);
+        for (key, value) in [
+            ("service.name", crate::SERVICE_NAME),
+            ("service.version", "build-123"),
+            ("deployment.environment.name", "audit-demo"),
+            ("deployment.environment", "audit-demo"),
+        ] {
+            assert_eq!(
+                resource.get(&opentelemetry::Key::from_static_str(key)),
+                Some(opentelemetry::Value::from(value))
+            );
+        }
+    }
 
     #[test]
     fn http_metric_labels_are_bounded_contract_values() {
