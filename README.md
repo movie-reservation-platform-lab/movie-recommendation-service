@@ -30,10 +30,24 @@ Runtime configuration is parsed once at startup:
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Validated HTTP(S) base URI for OTLP HTTP trace/metric export |
 | `OTEL_RESOURCE_ATTRIBUTES` | SDK defaults | Platform-owned resource attributes such as deployment environment |
 | `RUST_LOG` | `info` | `tracing-subscriber` filter |
+| `SERVICE_VERSION` | Cargo package version | Bounded artifact identity in audit events and OTel resources |
+| `DEPLOYMENT_ENVIRONMENT` | `local` | Bounded environment identity in audit events and OTel resources |
+| `DEMO_AUTH_ENABLED` | `false` | Enables the isolated demo credential check; no existing route is protected |
+| `DEMO_AUTH_USERNAME`, `DEMO_AUTH_PASSWORD` | unset | Both nonblank and required when demo auth is enabled; never logged |
 
 Invalid ports, booleans, provider settings, and OTLP base URIs fail startup
-with a diagnostic. No current setting is a secret, and exporter endpoints are
-not written to application request logs.
+with a diagnostic. Demo credentials are secrets: inject them at runtime and do
+not put them in image layers, committed files, or command-line arguments.
+Exporter endpoints are not written to application request logs.
+
+## Authentication audit demo
+
+The opt-in `POST /demo/auth/login` emits OCSF Authentication events as single-line
+`{"audit":EVENT}` stdout records. FireLens routes those records to Firehose and
+S3; Athena queries the archive. This service has no AWS publishing dependency.
+The credential check creates no session or token. See the
+[local demo and correlation guide](docs/audit-demo.md) for commands, outcomes,
+failure behavior, and the difference between OTel and AWS request IDs.
 
 ## HTTP Contract
 

@@ -1,3 +1,4 @@
+mod audit;
 mod config;
 mod demo_fault;
 mod di;
@@ -8,19 +9,31 @@ mod telemetry;
 
 use crate::{config::AppConfig, di::movie_service::create_movie_service, http::build_app};
 use anyhow::{Context, Result};
+use audit::{
+    config::{DemoCredentials, EventIdentity},
+    sink::{AuditEmitter, StdoutSink},
+};
 use std::{future::Future, net::SocketAddr, sync::Arc, time::Duration};
 use tokio::net::TcpListener;
 
 pub(crate) const SERVICE_NAME: &str = "movie-recommendation-service";
 const TELEMETRY_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(5);
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    run().await
+fn main() -> Result<()> {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?;
+    let result = runtime.block_on(run());
+    // Stdout is external I/O: a wedged blocking writer must not hang process shutdown forever.
+    runtime.shutdown_timeout(TELEMETRY_SHUTDOWN_TIMEOUT);
+    result
 }
 
 async fn run() -> Result<()> {
     let config = AppConfig::from_env().context("invalid service configuration")?;
+    let demo_credentials =
+        DemoCredentials::from_env().context("invalid demo authentication configuration")?;
+    let event_identity = EventIdentity::from_env().context("invalid service identity")?;
     let addr = SocketAddr::from(([0, 0, 0, 0], config.port));
     let listener = TcpListener::bind(addr)
         .await
@@ -32,13 +45,19 @@ async fn run() -> Result<()> {
     let telemetry = Arc::new(telemetry::init(
         SERVICE_NAME,
         config.otlp_endpoint.as_deref(),
+        &event_identity,
     )?);
     let app = build_app(
         create_movie_service(config.movie_provider),
         telemetry.clone(),
         config.default_fault,
         config.allow_request_demo_faults,
-    );
+    )
+    .merge(http::demo_auth::router(
+        demo_credentials,
+        event_identity,
+        AuditEmitter::new(Arc::new(StdoutSink)),
+    ));
 
     telemetry.record_starting(
         &bound_addr.to_string(),
