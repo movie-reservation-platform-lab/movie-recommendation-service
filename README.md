@@ -200,7 +200,7 @@ repositories promote the same digest; they must not rebuild this source or rely
 on a mutable tag. This repository does not own AWS resources or environment
 selection.
 
-Pushes to `main` publish a Linux AMD64 candidate to GHCR as `sha-<commit>`.
+Pushes to `main` publish a Linux AMD64 candidate to GHCR as `sha-<commit>-run-<run-id>-attempt-<attempt>`.
 CI disables BuildKit's automatic registry attestation to preserve the
 single-image manifest required by the first environment admission slice, then
 records explicit GitHub build provenance against the published digest.
@@ -231,3 +231,19 @@ bash automation/container-smoke.sh movie-recommendation-service:local
 ```
 
 These commands verify an artifact only; they do not publish or deploy it.
+
+### Container security evidence
+
+The pinned organization-owned actions publish the signed
+`recommendation-service-security-evidence-<run-id>-attempt-<attempt>` artifact:
+`component-candidate-evidence-v1alpha2.json`, verified image provenance,
+CycloneDX SBOM, and subject-bound vulnerability report. Evidence is retained
+for 14 days. Missing provenance or CRITICAL findings fail publication of the
+canonical evidence package; HIGH findings remain visible for admission review.
+
+Run/attempt tags are discovery hints, not deployment selectors. Environment
+verification independently checks the successful canonical run and signed
+package before admitting its exact digest to ECR. This producer has no AWS
+credentials or deployment authority. Older runs without this package are not
+eligible for the new admission path; use a fresh successful main run.
+See [the shared action contract](https://github.com/movie-reservation-platform-lab/.github/blob/86d1eb043e057b9b709e10d3dc19d4ea35a4cbf7/docs/container-candidate-actions.md).

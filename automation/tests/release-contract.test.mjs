@@ -35,8 +35,8 @@ test("publication is canonical, gated, single-platform, and attested", () => {
   assert.match(publishJob, /attestations: write/);
   assert.match(publishJob, /platforms: linux\/amd64/);
   assert.match(publishJob, /provenance: false/);
-  assert.match(publishJob, /actions\/attest-build-provenance@/);
-  assert.match(publishJob, /push-to-registry: false/);
+  assert.match(publishJob, /\/actions\/container-evidence@/);
+  assert.ok(publishJob.includes('digest: ${{ steps.build.outputs.digest }}'));
   assert.doesNotMatch(workflow, /pull_request_target:/);
 });
 
@@ -57,3 +57,18 @@ function workflowJob(name) {
   );
   return lines.slice(start, end === -1 ? lines.length : end).join("\n");
 }
+
+ test("shared evidence is canonical, attempt-safe and pinned without AWS authority", () => {
+  const publish = workflowJob("publish-image");
+  assert.ok(publish.includes("github.repository == 'movie-reservation-platform-lab/movie-recommendation-service'"));
+  assert.ok(publish.includes("component: recommendation-service"));
+  assert.ok(publish.includes("persist-credentials: false"));
+  assert.ok(workflow.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
+  assert.ok(publish.indexOf("/actions/prepare-container-candidate@") < publish.indexOf("docker/login-action@"));
+  assert.ok(publish.indexOf("docker/build-push-action@") < publish.indexOf("/actions/container-evidence@"));
+  const refs = [...workflow.matchAll(/uses: (\S+)/g)].map(m => m[1]);
+  assert.ok(refs.every(ref => /@[a-f0-9]{40}$/.test(ref)));
+  const pins = refs.filter(ref => ref.includes("/.github/actions/")).map(ref => ref.split("@")[1]);
+  assert.equal(pins.length,2); assert.equal(pins[0],pins[1]);
+  assert.ok(!workflow.includes("aws-actions/"));
+ });
