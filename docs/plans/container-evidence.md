@@ -30,7 +30,7 @@ Copy reservation-service tooling here: initially simple but duplicates security 
 
 ## 8. API / Interface Changes
 
-New ci.movie-platform.dev/v1alpha2 four-file candidate package. Artifact: recommendation-service-security-evidence-RUN-attempt-ATTEMPT. Discovery tag gains run/attempt suffix; immutable digest remains identity. Job display name is retained and recorded in evidence. Shared contract documentation is in movie-reservation-platform-lab/.github#13.
+New ci.movie-platform.dev/v1alpha2 four-file candidate package. Artifact: recommendation-service-security-evidence-RUN-attempt-ATTEMPT. Discovery tag gains run/attempt suffix; immutable digest remains identity. Job display name is retained and recorded in evidence. Shared contract documentation is in movie-reservation-platform-lab/movie-platform-actions#2 and this producer pins commit 9b7b5a601367a45356687a0e1bf1d1638d62aca9.
 
 ## 9. Data Model / Persistence Changes
 
@@ -58,7 +58,7 @@ Keep contract tests separate from runtime tests. Shared action tests cover behav
 
 ## 14. Rollout / Migration Plan
 
-Depends on https://github.com/movie-reservation-platform-lab/.github/pull/13. Merge shared action first, then this PR. Add matching environment verification separately. Record fresh run/attempt and immutable digest; do not infer deployment. Rollback by reverting this workflow/pin change without changing runtime code.
+Depends on https://github.com/movie-reservation-platform-lab/movie-platform-actions/pull/2 at commit 9b7b5a601367a45356687a0e1bf1d1638d62aca9. Merge the shared action first, then this PR. Add matching environment verification separately. Record fresh run/attempt and immutable digest; do not infer deployment. Rollback by reverting this workflow/pin change without changing runtime code.
 
 ## 15. Risks and Mitigations
 

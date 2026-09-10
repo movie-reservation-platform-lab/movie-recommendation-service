@@ -68,7 +68,7 @@ function workflowJob(name) {
   assert.ok(publish.indexOf("docker/build-push-action@") < publish.indexOf("/actions/container-evidence@"));
   const refs = [...workflow.matchAll(/uses: (\S+)/g)].map(m => m[1]);
   assert.ok(refs.every(ref => /@[a-f0-9]{40}$/.test(ref)));
-  const pins = refs.filter(ref => ref.includes("/.github/actions/")).map(ref => ref.split("@")[1]);
+  const pins = refs.filter(ref => ref.includes("/movie-platform-actions/actions/")).map(ref => ref.split("@")[1]);
   assert.equal(pins.length,2); assert.equal(pins[0],pins[1]);
   assert.ok(!workflow.includes("aws-actions/"));
  });

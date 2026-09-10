@@ -246,4 +246,4 @@ verification independently checks the successful canonical run and signed
 package before admitting its exact digest to ECR. This producer has no AWS
 credentials or deployment authority. Older runs without this package are not
 eligible for the new admission path; use a fresh successful main run.
-See [the shared action contract](https://github.com/movie-reservation-platform-lab/.github/blob/86d1eb043e057b9b709e10d3dc19d4ea35a4cbf7/docs/container-candidate-actions.md).
+See [the shared action contract](https://github.com/movie-reservation-platform-lab/movie-platform-actions/blob/9b7b5a601367a45356687a0e1bf1d1638d62aca9/docs/container-candidate-actions.md).

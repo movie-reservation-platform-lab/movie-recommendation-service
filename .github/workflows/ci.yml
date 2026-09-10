@@ -128,7 +128,7 @@ jobs:
 
       - name: Prepare canonical candidate
         id: candidate
-        uses: movie-reservation-platform-lab/.github/actions/prepare-container-candidate@86d1eb043e057b9b709e10d3dc19d4ea35a4cbf7 # shared evidence v1alpha2
+        uses: movie-reservation-platform-lab/movie-platform-actions/actions/prepare-container-candidate@9b7b5a601367a45356687a0e1bf1d1638d62aca9 # shared evidence v1alpha2
         with:
           component: recommendation-service
 
@@ -154,7 +154,7 @@ jobs:
             org.opencontainers.image.version=${{ steps.candidate.outputs.tag }}
 
       - name: Attest and publish security evidence
-        uses: movie-reservation-platform-lab/.github/actions/container-evidence@86d1eb043e057b9b709e10d3dc19d4ea35a4cbf7 # shared evidence v1alpha2
+        uses: movie-reservation-platform-lab/movie-platform-actions/actions/container-evidence@9b7b5a601367a45356687a0e1bf1d1638d62aca9 # shared evidence v1alpha2
         with:
           component: recommendation-service
           digest: ${{ steps.build.outputs.digest }}
