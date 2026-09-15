@@ -5,6 +5,7 @@ import test from "node:test";
 const workflow = readFileSync(".github/workflows/ci.yml", "utf8");
 const dockerfile = readFileSync("Dockerfile", "utf8");
 const smoke = readFileSync("automation/container-smoke.sh", "utf8");
+const reviewedActionsSha = "036531133bcefd454b5afc0eb55f8ba0328901ea";
 
 test("production image is non-root and exposes the stable runtime contract", () => {
   assert.match(dockerfile, /USER appuser/);
@@ -25,14 +26,17 @@ test("container smoke covers normal and controlled fault paths", () => {
 test("publication is canonical, gated, single-platform, and attested", () => {
   const publishJob = workflowJob("publish-image");
 
-  assert.match(publishJob, /github\.event_name == 'push'/);
-  assert.match(publishJob, /github\.ref == 'refs\/heads\/main'/);
+  const conditions = [...publishJob.matchAll(/^    if: (.+)$/gm)].map(match => match[1]);
+  assert.deepEqual(conditions, [
+    "github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'movie-reservation-platform-lab/movie-recommendation-service'",
+  ]);
   for (const prerequisite of ["quality", "runtime-tests", "automation-contract", "container-smoke"]) {
     assert.match(publishJob, new RegExp(`- ${prerequisite}`));
   }
-  assert.match(publishJob, /packages: write/);
-  assert.match(publishJob, /id-token: write/);
-  assert.match(publishJob, /attestations: write/);
+  assert.match(
+    publishJob,
+    /permissions:\n      contents: read\n      packages: write\n      id-token: write\n      attestations: write\n/,
+  );
   assert.match(publishJob, /platforms: linux\/amd64/);
   assert.match(publishJob, /target: runtime/);
   assert.match(publishJob, /provenance: false/);
@@ -59,6 +63,21 @@ function workflowJob(name) {
   return lines.slice(start, end === -1 ? lines.length : end).join("\n");
 }
 
+function workflowStep(job, name) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = job.match(new RegExp(`^      - name: ${escapedName}\\n[\\s\\S]*?(?=^      - name:|(?![\\s\\S]))`, "m"));
+  assert.notEqual(match, null, `workflow step ${name} exists`);
+  return match[0];
+}
+
+test("prepare receives the explicit caller token", () => {
+  const prepare = workflowStep(workflowJob("publish-image"), "Prepare canonical candidate");
+
+  assert.ok(prepare.includes(`/actions/prepare-container-candidate@${reviewedActionsSha}`));
+  assert.ok(prepare.includes("        with:\n          component: recommendation-service\n"));
+  assert.ok(prepare.includes("          github-token: ${{ github.token }}\n"));
+});
+
 test("shared evidence is canonical, attempt-safe and pinned without AWS authority", () => {
   const publish = workflowJob("publish-image");
   assert.ok(publish.includes("github.repository == 'movie-reservation-platform-lab/movie-recommendation-service'"));
@@ -70,8 +89,13 @@ test("shared evidence is canonical, attempt-safe and pinned without AWS authorit
   const refs = [...workflow.matchAll(/uses: (\S+)/g)].map(m => m[1]);
   assert.ok(refs.every(ref => /@[a-f0-9]{40}$/.test(ref)));
   const pins = refs.filter(ref => ref.includes("/movie-platform-actions/actions/")).map(ref => ref.split("@")[1]);
-  assert.deepEqual(pins, Array(2).fill("bb40579c285df0b581c48b10f9b34574d5c78639"));
-  assert.ok(workflowJob("container-security-check").includes(`ref: ${pins[0]}`));
+  assert.deepEqual(pins, Array(2).fill(reviewedActionsSha));
+  const toolingCheckout = workflowStep(
+    workflowJob("container-security-check"),
+    "Check out reviewed shared security tooling",
+  );
+  assert.ok(toolingCheckout.includes(`          ref: ${reviewedActionsSha}\n`));
+  assert.ok(toolingCheckout.includes("repository: movie-reservation-platform-lab/movie-platform-actions"));
   assert.match(publish, /evidence-version: v1alpha3/);
   assert.ok(!workflow.includes("aws-actions/"));
 });

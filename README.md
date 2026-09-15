@@ -249,7 +249,24 @@ verification independently checks the successful canonical run and signed
 package before admitting its exact digest to ECR. This producer has no AWS
 credentials or deployment authority. Older runs without this package are not
 eligible for the new admission path; use a fresh successful main run.
-See [the shared action contract](https://github.com/movie-reservation-platform-lab/movie-platform-actions/blob/bb40579c285df0b581c48b10f9b34574d5c78639/docs/container-candidate-actions.md).
+See [the shared action contract](https://github.com/movie-reservation-platform-lab/movie-platform-actions/blob/036531133bcefd454b5afc0eb55f8ba0328901ea/docs/container-candidate-actions.md).
+
+This producer adopts [actions PR #18](https://github.com/movie-reservation-platform-lab/movie-platform-actions/pull/18)
+at `036531133bcefd454b5afc0eb55f8ba0328901ea` for both publisher actions and the
+PR/local scanner. Prepare receives `github-token: ${{ github.token }}` for its
+authenticated canonical-main lookup, using the publishing job's existing
+`contents: read` permission. The job's other permissions remain required;
+passing its token does not reduce that token's authority. This release also
+hardens evidence failure paths (including bounded legacy report reads and safe
+errors) and scanner cleanup. Evidence remains v1alpha3.
+
+Offline caller tests verify wiring and guards. Hosted PR scanning does not
+exercise prepare or prove private-repository access or canonical publication;
+those require separate live rollout acceptance. Publication remains restricted
+to push events on this repository's canonical main. Rollback reverts both action
+pins, the PR tooling checkout, and the documented local tooling pin to
+`bb40579c285df0b581c48b10f9b34574d5c78639`, and removes the new prepare token input
+together. See the [adoption plan](docs/plans/authenticated-prepare-adoption.md).
 
 
 ### Production-image checks before merge
@@ -275,7 +292,7 @@ shared tool as `GH_TOKEN`:
 ```sh
 docker build --platform linux/amd64 --target runtime --tag movie-recommendation-service:pr-security .
 bash automation/container-smoke.sh movie-recommendation-service:pr-security
-# Use movie-platform-actions checked out at bb40579c285df0b581c48b10f9b34574d5c78639.
+# Use movie-platform-actions checked out at 036531133bcefd454b5afc0eb55f8ba0328901ea.
 node ../movie-platform-actions/local-tools/container-security/lib/scan.mjs \
   movie-recommendation-service:pr-security \
   --evidence-version v1alpha3 --component recommendation-service \
