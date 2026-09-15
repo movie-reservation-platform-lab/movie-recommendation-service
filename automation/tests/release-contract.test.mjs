@@ -33,9 +33,9 @@ test("publication is canonical, gated, single-platform, and attested", () => {
   for (const prerequisite of ["quality", "runtime-tests", "automation-contract", "container-smoke"]) {
     assert.match(publishJob, new RegExp(`- ${prerequisite}`));
   }
-  assert.match(
-    publishJob,
-    /permissions:\n      contents: read\n      packages: write\n      id-token: write\n      attestations: write\n/,
+  assert.equal(
+    workflowPermissions(publishJob),
+    "      contents: read\n      packages: write\n      id-token: write\n      attestations: write\n",
   );
   assert.match(publishJob, /platforms: linux\/amd64/);
   assert.match(publishJob, /target: runtime/);
@@ -61,6 +61,12 @@ function workflowJob(name) {
     (line, index) => index > start && /^  [a-z0-9-]+:$/.test(line),
   );
   return lines.slice(start, end === -1 ? lines.length : end).join("\n");
+}
+
+function workflowPermissions(job) {
+  const match = job.match(/^    permissions:\n((?:      [^\n]+\n)+)/m);
+  assert.notEqual(match, null, "workflow job has an explicit permission stanza");
+  return match[1];
 }
 
 function workflowStep(job, name) {
@@ -107,7 +113,7 @@ test("PR image scanning uses the reviewed shared policy with read-only authority
   for (const prerequisite of ["quality", "automation-contract"]) {
     assert.match(security, new RegExp(`- ${prerequisite}`));
   }
-  assert.match(security, /permissions:\n      contents: read/);
+  assert.equal(workflowPermissions(security), "      contents: read\n");
   assert.doesNotMatch(security, /: write|docker\/login-action|push: true|attest-build-provenance|container-evidence@/);
   assert.equal((security.match(/persist-credentials: false/g) ?? []).length, 2);
   assert.match(security, /repository: movie-reservation-platform-lab\/movie-platform-actions/);
