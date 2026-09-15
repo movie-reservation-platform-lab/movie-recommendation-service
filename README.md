@@ -236,14 +236,53 @@ These commands verify an artifact only; they do not publish or deploy it.
 
 The pinned organization-owned actions publish the signed
 `recommendation-service-security-evidence-<run-id>-attempt-<attempt>` artifact:
-`component-candidate-evidence-v1alpha2.json`, verified image provenance,
+`component-candidate-evidence-v1alpha3.json`, verified image provenance,
 CycloneDX SBOM, and subject-bound vulnerability report. Evidence is retained
-for 14 days. Missing provenance or CRITICAL findings fail publication of the
-canonical evidence package; HIGH findings remain visible for admission review.
+for 14 days. Missing provenance, unavailable central policy, or unapproved CRITICAL findings
+block the canonical evidence package. V1alpha3 evaluates the complete report
+against current centrally approved exemptions; this repository supplies no
+exemptions or ignore list. HIGH findings remain visible for admission review.
+Rejected publication retains scan/policy diagnostics in a separate artifact.
 
 Run/attempt tags are discovery hints, not deployment selectors. Environment
 verification independently checks the successful canonical run and signed
 package before admitting its exact digest to ECR. This producer has no AWS
 credentials or deployment authority. Older runs without this package are not
 eligible for the new admission path; use a fresh successful main run.
-See [the shared action contract](https://github.com/movie-reservation-platform-lab/movie-platform-actions/blob/9b7b5a601367a45356687a0e1bf1d1638d62aca9/docs/container-candidate-actions.md).
+See [the shared action contract](https://github.com/movie-reservation-platform-lab/movie-platform-actions/blob/bb40579c285df0b581c48b10f9b34574d5c78639/docs/container-candidate-actions.md).
+
+
+### Production-image checks before merge
+
+The production image keeps the Rust release binary, curl readiness probe, TLS
+certificates and tini on Debian Trixie. The build refreshes preinstalled runtime
+packages as well as installing dependencies, so available Debian security fixes
+are applied even when the base image has not yet been republished.
+
+`container-security-check` builds the Rust `runtime` target for linux/amd64 on
+PRs and manual runs, then uses the same reviewed v1alpha3 policy tooling as
+publication. It has only `contents: read` permission. The entire scan directory
+is uploaded even when the gate fails, as
+`recommendation-service-pr-vulnerability-report-<run-id>-attempt-<attempt>`
+(retention: 14 days). Complete findings, including all severities and unfixed
+packages, remain available for remediation; failed/incomplete evaluation keeps
+the check red. These reports are diagnostics, not signed candidate evidence.
+Canonical main pushes use the publication job's exact-digest scan instead.
+
+To reproduce locally with Node 24, Docker and a GitHub token available to the
+shared tool as `GH_TOKEN`:
+
+```sh
+docker build --platform linux/amd64 --target runtime --tag movie-recommendation-service:pr-security .
+bash automation/container-smoke.sh movie-recommendation-service:pr-security
+# Use movie-platform-actions checked out at bb40579c285df0b581c48b10f9b34574d5c78639.
+node ../movie-platform-actions/local-tools/container-security/lib/scan.mjs \
+  movie-recommendation-service:pr-security \
+  --evidence-version v1alpha3 --component recommendation-service \
+  --output-dir /tmp/recommendation-service-pr-security
+```
+
+The scanner returns 0 for a policy pass, 1 for rejection, and 2 for an incomplete
+check. Full reports survive rejection; an incomplete check retains partial
+output for diagnosis. Local results do not replace a fresh successful canonical
+publication or environment-owned verification/admission.

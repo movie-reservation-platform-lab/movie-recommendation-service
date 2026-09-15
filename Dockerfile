@@ -11,10 +11,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build --release --locked && \
     cp /app/target/release/movie_recommendation_service /tmp/movie-recommendation-service
 
-FROM debian:bookworm-slim AS runtime
+FROM debian:trixie-slim AS runtime
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates curl tini \
+# Refresh preinstalled packages too: base images can lag Debian security fixes
+# for perl-base, gzip, glibc, PCRE2 and SQLite even after a fresh pull.
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && apt-get install -y --no-install-recommends ca-certificates curl tini \
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -r -u 10001 appuser

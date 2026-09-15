@@ -34,6 +34,7 @@ test("publication is canonical, gated, single-platform, and attested", () => {
   assert.match(publishJob, /id-token: write/);
   assert.match(publishJob, /attestations: write/);
   assert.match(publishJob, /platforms: linux\/amd64/);
+  assert.match(publishJob, /target: runtime/);
   assert.match(publishJob, /provenance: false/);
   assert.match(publishJob, /\/actions\/container-evidence@/);
   assert.ok(publishJob.includes('digest: ${{ steps.build.outputs.digest }}'));
@@ -58,7 +59,7 @@ function workflowJob(name) {
   return lines.slice(start, end === -1 ? lines.length : end).join("\n");
 }
 
- test("shared evidence is canonical, attempt-safe and pinned without AWS authority", () => {
+test("shared evidence is canonical, attempt-safe and pinned without AWS authority", () => {
   const publish = workflowJob("publish-image");
   assert.ok(publish.includes("github.repository == 'movie-reservation-platform-lab/movie-recommendation-service'"));
   assert.ok(publish.includes("component: recommendation-service"));
@@ -69,6 +70,65 @@ function workflowJob(name) {
   const refs = [...workflow.matchAll(/uses: (\S+)/g)].map(m => m[1]);
   assert.ok(refs.every(ref => /@[a-f0-9]{40}$/.test(ref)));
   const pins = refs.filter(ref => ref.includes("/movie-platform-actions/actions/")).map(ref => ref.split("@")[1]);
-  assert.equal(pins.length,2); assert.equal(pins[0],pins[1]);
+  assert.deepEqual(pins, Array(2).fill("bb40579c285df0b581c48b10f9b34574d5c78639"));
+  assert.ok(workflowJob("container-security-check").includes(`ref: ${pins[0]}`));
+  assert.match(publish, /evidence-version: v1alpha3/);
   assert.ok(!workflow.includes("aws-actions/"));
- });
+});
+
+test("PR image scanning uses the reviewed shared policy with read-only authority", () => {
+  const security = workflowJob("container-security-check");
+  assert.match(workflow, /pull_request:/);
+  assert.ok(security.includes("if: github.event_name != 'push' || github.ref != 'refs/heads/main' || github.repository != 'movie-reservation-platform-lab/movie-recommendation-service'"));
+  for (const prerequisite of ["quality", "automation-contract"]) {
+    assert.match(security, new RegExp(`- ${prerequisite}`));
+  }
+  assert.match(security, /permissions:\n      contents: read/);
+  assert.doesNotMatch(security, /: write|docker\/login-action|push: true|attest-build-provenance|container-evidence@/);
+  assert.equal((security.match(/persist-credentials: false/g) ?? []).length, 2);
+  assert.match(security, /repository: movie-reservation-platform-lab\/movie-platform-actions/);
+  assert.match(security, /node-version: '24'/);
+  assert.match(security, /--platform linux\/amd64 --target runtime/);
+  assert.match(security, /node \.platform-actions\/local-tools\/container-security\/lib\/scan\.mjs/);
+  assert.match(security, /--evidence-version v1alpha3 --component recommendation-service/);
+  assert.equal((security.match(/GH_TOKEN:/g) ?? []).length, 1);
+  assert.ok(security.indexOf("GH_TOKEN:") > security.indexOf("run: docker build"));
+  assert.doesNotMatch(security, /continue-on-error|\|\| true|aquasecurity\/trivy-action/);
+});
+
+test("complete PR diagnostics upload after gate failure without claiming candidate authority", () => {
+  const security = workflowJob("container-security-check");
+  const upload = security.slice(security.indexOf("      - name: Retain PR vulnerability diagnostics"));
+  assert.ok(security.indexOf("lib/scan.mjs") < security.indexOf("actions/upload-artifact@"));
+  assert.ok(upload.includes("if: ${{ !cancelled() }}"));
+  assert.ok(security.includes('--output-dir "$RUNNER_TEMP/recommendation-service-pr-security"'));
+  assert.ok(upload.includes("path: ${{ runner.temp }}/recommendation-service-pr-security/"));
+  assert.ok(upload.includes("name: recommendation-service-pr-vulnerability-report-${{ github.run_id }}-attempt-${{ github.run_attempt }}"));
+  assert.match(upload, /if-no-files-found: error/);
+  assert.match(upload, /retention-days: 14/);
+  assert.doesNotMatch(upload, /security-evidence|attest/);
+});
+
+test("all PR jobs lack publication authority and only canonical pushes select publication", () => {
+  const condition = workflowJob("publish-image").match(/^    if: (.+)$/m)[1];
+  assert.equal(condition, "github.event_name == 'push' && github.ref == 'refs/heads/main' && github.repository == 'movie-reservation-platform-lab/movie-recommendation-service'");
+  assert.match(workflow, /permissions:\n  contents: read/);
+  for (const name of ["quality", "runtime-tests", "automation-contract", "container-smoke", "container-security-check"]) {
+    assert.doesNotMatch(workflowJob(name), /: write|docker\/login-action|push: true|attest-build-provenance|actions\/container-evidence@/);
+  }
+  // The PR-only scanner is skipped on canonical main. It must not cause the
+  // publisher to skip its own exact-digest scan via a skipped prerequisite.
+  const needs = workflowJob("publish-image").split("    needs:")[1].split("    runs-on:")[0];
+  assert.doesNotMatch(needs, /container-security-check/);
+});
+
+test("smoke, security and publication all select the Rust production target", () => {
+  for (const name of ["container-smoke", "container-security-check"]) {
+    assert.match(workflowJob(name), /docker build --platform linux\/amd64 --target runtime /);
+  }
+  assert.match(workflowJob("publish-image"), /target: runtime/);
+  assert.match(dockerfile, /FROM debian:trixie-slim AS runtime/);
+  assert.match(dockerfile, /apt-get upgrade -y --no-install-recommends/);
+  assert.match(dockerfile, /ca-certificates curl tini/);
+  assert.match(dockerfile, /COPY --from=build \/tmp\/movie-recommendation-service/);
+});

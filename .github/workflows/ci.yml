@@ -91,10 +91,61 @@ jobs:
           persist-credentials: false
 
       - name: Build production image
-        run: docker build --tag movie-recommendation-service:smoke .
+        run: docker build --platform linux/amd64 --target runtime --tag movie-recommendation-service:smoke .
 
       - name: Verify runtime and controlled fault paths
         run: bash automation/container-smoke.sh movie-recommendation-service:smoke
+
+  container-security-check:
+    name: container-security-check
+    if: github.event_name != 'push' || github.ref != 'refs/heads/main' || github.repository != 'movie-reservation-platform-lab/movie-recommendation-service'
+    needs:
+      - quality
+      - automation-contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Check out reviewed shared security tooling
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: movie-reservation-platform-lab/movie-platform-actions
+          ref: bb40579c285df0b581c48b10f9b34574d5c78639
+          path: .platform-actions
+          persist-credentials: false
+
+      - name: Set up Node.js for shared security tooling
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+
+      - name: Build production image for vulnerability check
+        run: docker build --platform linux/amd64 --target runtime --tag movie-recommendation-service:pr-security .
+
+      - name: Evaluate complete report with current approved policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          node .platform-actions/local-tools/container-security/lib/scan.mjs \
+            movie-recommendation-service:pr-security \
+            --evidence-version v1alpha3 --component recommendation-service \
+            --output-dir "$RUNNER_TEMP/recommendation-service-pr-security"
+
+      - name: Retain PR vulnerability diagnostics
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: recommendation-service-pr-vulnerability-report-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/recommendation-service-pr-security/
+          if-no-files-found: error
+          retention-days: 14
 
   publish-image:
     name: publish immutable GHCR image
@@ -128,7 +179,7 @@ jobs:
 
       - name: Prepare canonical candidate
         id: candidate
-        uses: movie-reservation-platform-lab/movie-platform-actions/actions/prepare-container-candidate@9b7b5a601367a45356687a0e1bf1d1638d62aca9 # shared evidence v1alpha2
+        uses: movie-reservation-platform-lab/movie-platform-actions/actions/prepare-container-candidate@bb40579c285df0b581c48b10f9b34574d5c78639 # shared evidence v1alpha3
         with:
           component: recommendation-service
 
@@ -144,6 +195,7 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
         with:
           context: .
+          target: runtime
           platforms: linux/amd64
           provenance: false
           push: true
@@ -154,8 +206,9 @@ jobs:
             org.opencontainers.image.version=${{ steps.candidate.outputs.tag }}
 
       - name: Attest and publish security evidence
-        uses: movie-reservation-platform-lab/movie-platform-actions/actions/container-evidence@9b7b5a601367a45356687a0e1bf1d1638d62aca9 # shared evidence v1alpha2
+        uses: movie-reservation-platform-lab/movie-platform-actions/actions/container-evidence@bb40579c285df0b581c48b10f9b34574d5c78639 # shared evidence v1alpha3
         with:
+          evidence-version: v1alpha3
           component: recommendation-service
           digest: ${{ steps.build.outputs.digest }}
           github-token: ${{ github.token }}

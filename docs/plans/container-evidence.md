@@ -1,5 +1,9 @@
 # Implementation Plan: container evidence admission parity
 
+> Historical v1alpha2 plan. PR #10 now follows
+> [v1alpha3 evidence and production-image PR scanning](container-evidence-v3-pr-scanning.md),
+> using merged shared-actions PR #13 at `bb40579c285df0b581c48b10f9b34574d5c78639`.
+
 ## 1. Summary
 
 Issue #8: adopt the organization-owned container evidence actions, independently of runtime changes.
