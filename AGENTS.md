@@ -114,6 +114,7 @@ Read the relevant rule files from `.ai/rules/` when the task matches their descr
 
 Read the relevant skill file from `.ai/skills/` when the task matches its description.
 
+- **hybrid-teaching-mode**: Use for learning-first implementation, refactoring, testing, or debugging when the engineer wants meaningful hands-on practice, graduated AI guidance, or relief from overreliance and coding fatigue without receiving a black-box solution. (read `.ai/skills/hybrid-teaching-mode/SKILL.md`)
 - **principal-engineer-planner**: Use before implementation to inspect the repository, clarify requirements, compare alternatives, identify risks, and produce an implementation-ready plan under docs/plans/. (read `.ai/skills/principal-engineer-planner/SKILL.md`)
 - **programming-kb**: Use to retrieve focused local programming, backend architecture, system design, and implementation knowledge from /home/patex1987/Documents/programming_kb before broad internet search; validate externally when the user asks or the knowledge may be stale. (read `.ai/skills/programming-kb/SKILL.md`)
 - **rust-axum-service**: Use when implementing or reviewing Rust/Axum handlers, typed contracts, Tokio async behavior, errors, configuration, telemetry, and graceful shutdown. (read `.ai/skills/rust-axum-service/SKILL.md`)
