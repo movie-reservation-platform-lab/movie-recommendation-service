@@ -1,7 +1,7 @@
 # Implementation Plan: v1alpha3 evidence and production-image PR scanning
 
 ## 1. Summary
-Resume issue #8 / PR #10 and include the engineer's uncommitted hybrid-teaching guidance. Adopt reviewed shared-actions `bb40579c285df0b581c48b10f9b34574d5c78639`, following merged recommendation-MCP PR #11 (`7b56272`).
+Resume issue #8 / PR #10 and include the engineer's uncommitted hybrid-teaching guidance. The initial rollout adopted reviewed shared-actions `bb40579c285df0b581c48b10f9b34574d5c78639`, following merged recommendation-MCP PR #11 (`7b56272`). The current pin is maintained by the [authenticated prepare adoption](authenticated-prepare-adoption.md); historical validation results below retain the revision actually tested.
 
 ## 2. Goals
 Use v1alpha3 exact-digest publication evidence and read-only production-image checks before merge. Build, smoke-test and scan this Rust service; fix its measured vulnerabilities and retain complete diagnostics on rejection.
