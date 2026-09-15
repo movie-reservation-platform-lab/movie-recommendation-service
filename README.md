@@ -200,7 +200,7 @@ repositories promote the same digest; they must not rebuild this source or rely
 on a mutable tag. This repository does not own AWS resources or environment
 selection.
 
-Pushes to `main` publish a Linux AMD64 candidate to GHCR as `sha-<commit>`.
+Pushes to `main` publish a Linux AMD64 candidate to GHCR as `sha-<commit>-run-<run-id>-attempt-<attempt>`.
 CI disables BuildKit's automatic registry attestation to preserve the
 single-image manifest required by the first environment admission slice, then
 records explicit GitHub build provenance against the published digest.
@@ -231,3 +231,58 @@ bash automation/container-smoke.sh movie-recommendation-service:local
 ```
 
 These commands verify an artifact only; they do not publish or deploy it.
+
+### Container security evidence
+
+The pinned organization-owned actions publish the signed
+`recommendation-service-security-evidence-<run-id>-attempt-<attempt>` artifact:
+`component-candidate-evidence-v1alpha3.json`, verified image provenance,
+CycloneDX SBOM, and subject-bound vulnerability report. Evidence is retained
+for 14 days. Missing provenance, unavailable central policy, or unapproved CRITICAL findings
+block the canonical evidence package. V1alpha3 evaluates the complete report
+against current centrally approved exemptions; this repository supplies no
+exemptions or ignore list. HIGH findings remain visible for admission review.
+Rejected publication retains scan/policy diagnostics in a separate artifact.
+
+Run/attempt tags are discovery hints, not deployment selectors. Environment
+verification independently checks the successful canonical run and signed
+package before admitting its exact digest to ECR. This producer has no AWS
+credentials or deployment authority. Older runs without this package are not
+eligible for the new admission path; use a fresh successful main run.
+See [the shared action contract](https://github.com/movie-reservation-platform-lab/movie-platform-actions/blob/bb40579c285df0b581c48b10f9b34574d5c78639/docs/container-candidate-actions.md).
+
+
+### Production-image checks before merge
+
+The production image keeps the Rust release binary, curl readiness probe, TLS
+certificates and tini on Debian Trixie. The build refreshes preinstalled runtime
+packages as well as installing dependencies, so available Debian security fixes
+are applied even when the base image has not yet been republished.
+
+`container-security-check` builds the Rust `runtime` target for linux/amd64 on
+PRs and manual runs, then uses the same reviewed v1alpha3 policy tooling as
+publication. It has only `contents: read` permission. The entire scan directory
+is uploaded even when the gate fails, as
+`recommendation-service-pr-vulnerability-report-<run-id>-attempt-<attempt>`
+(retention: 14 days). Complete findings, including all severities and unfixed
+packages, remain available for remediation; failed/incomplete evaluation keeps
+the check red. These reports are diagnostics, not signed candidate evidence.
+Canonical main pushes use the publication job's exact-digest scan instead.
+
+To reproduce locally with Node 24, Docker and a GitHub token available to the
+shared tool as `GH_TOKEN`:
+
+```sh
+docker build --platform linux/amd64 --target runtime --tag movie-recommendation-service:pr-security .
+bash automation/container-smoke.sh movie-recommendation-service:pr-security
+# Use movie-platform-actions checked out at bb40579c285df0b581c48b10f9b34574d5c78639.
+node ../movie-platform-actions/local-tools/container-security/lib/scan.mjs \
+  movie-recommendation-service:pr-security \
+  --evidence-version v1alpha3 --component recommendation-service \
+  --output-dir /tmp/recommendation-service-pr-security
+```
+
+The scanner returns 0 for a policy pass, 1 for rejection, and 2 for an incomplete
+check. Full reports survive rejection; an incomplete check retains partial
+output for diagnosis. Local results do not replace a fresh successful canonical
+publication or environment-owned verification/admission.
