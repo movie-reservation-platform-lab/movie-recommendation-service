@@ -1,0 +1,3 @@
+type: skill
+skillName: clean-architecture
+description: "Use when designing, reviewing, or refactoring recommendation-domain, use-case, HTTP, and infrastructure boundaries in this Rust/Axum service; skip mechanical edits with no architectural choice."
