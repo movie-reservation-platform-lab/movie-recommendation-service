@@ -1,6 +1,5 @@
 mod audit;
 mod config;
-mod demo_fault;
 mod di;
 mod domain;
 mod http;
@@ -50,8 +49,6 @@ async fn run() -> Result<()> {
     let app = build_app(
         create_movie_service(config.movie_provider),
         telemetry.clone(),
-        config.default_fault,
-        config.allow_request_demo_faults,
     )
     .merge(http::demo_auth::router(
         demo_credentials,
@@ -63,8 +60,6 @@ async fn run() -> Result<()> {
         &bound_addr.to_string(),
         config.port,
         config.movie_provider.as_str(),
-        config.default_fault.as_str(),
-        config.allow_request_demo_faults,
     );
 
     let serve_result = axum::serve(listener, app)

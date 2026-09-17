@@ -1,9 +1,8 @@
 # Project AI Guidance
 
 This repository owns the standalone Rust/Axum movie recommendation API. It
-provides a small stable HTTP contract for the recommendation MCP, controlled
-slow/failure scenarios for the demo, and OpenTelemetry traces, metrics, and
-structured logs.
+provides a small stable HTTP contract for the recommendation MCP, artifact-selected
+catalog data, and OpenTelemetry traces, metrics, and structured logs.
 
 ## Implementation Provenance
 
@@ -12,20 +11,20 @@ structured logs.
   `demo-multi-service-observability`, at commit `3ea72f3`.
 - Commit `3ea72f3` is present in this repository's Git history and is the proven
   multi-service observability baseline.
-- Preserve the adopted Axum/Tokio, request-context, OpenTelemetry, controlled
-  fault, in-process test, lifecycle, and container behavior while stabilizing
+- Preserve the adopted Axum/Tokio, request-context, OpenTelemetry,
+  in-process test, lifecycle, and container behavior while stabilizing
   it as the independently deployable recommendation service.
 - The historical branch also contained `axum-tools-mcp/`; MCP ownership now
   belongs to `movie-recommendation-mcp`, not this service repository.
 
 ## Repository Layout
 
-- `src/main.rs`: HTTP routes, request mapping, recommendation behavior, demo
-  fault selection, and process lifecycle.
+- `src/main.rs`: composition and process lifecycle.
+- `src/domain/recommendation.rs`: pure ranking and typed calculation errors.
+- `src/services/movie/`: catalog adapter and recommendation orchestration.
 - `src/telemetry.rs`: OpenTelemetry providers, structured tracing, and bounded
   application metrics.
-- `src/recommendation/`: recommendation-domain behavior where extracted.
-- `src/http/`: HTTP-specific helpers where extracted.
+- `src/http/`: routes, input validation, response mapping, context and demo auth.
 - `Dockerfile`: immutable service artifact and health-check contract.
 - `.ai/`: canonical AI guidance, skills, and read-only review agents.
 
@@ -59,8 +58,10 @@ before handoff.
 
 - Preserve `/health`, `/ready`, `/movies`, and `/recommendations` behavior unless
   an explicit compatibility plan changes it.
-- Preserve controlled `slow-recommendation` and `recommendation-error` demo
-  behavior without allowing arbitrary fault injection.
+- Request-controlled faults are retired. Never restore header, query, or body
+  overrides for catalog selection or recommendation outcomes.
+- Keep alternate catalog data behind the default-off `catalog-snapshots` build
+  feature. Environment/artifact selection belongs to the platform owner.
 - Preserve W3C trace context and bounded correlation/request metadata.
 - Keep IDs, free text, and unbounded values out of metric labels.
 - Keep delivery/DORA telemetry outside service request telemetry.
@@ -79,8 +80,10 @@ before handoff.
 - Test handlers through an in-process Axum router rather than a real port when
   possible.
 - Test recommendation rules as ordinary Rust functions/modules.
-- Cover health/readiness, bounds/defaults, malformed input, slow/error faults,
+- Cover health/readiness, bounds/defaults, malformed input, catalog/ranking errors,
   trace/correlation parsing, and safe error responses.
+- Inject fixed calibration sources to test ranking outcomes; never rely on
+  statistical failure counts. Run tests with default and `catalog-snapshots` builds.
 - Use paused Tokio time for deterministic delay/timeout behavior when supported.
 
 ## Safety

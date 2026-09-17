@@ -46,8 +46,6 @@ pub(crate) enum HttpEventKind {
     ReadinessCompleted,
     MoviesCompleted,
     RecommendationsCompleted,
-    RecommendationsFaultError,
-    RecommendationsFaultDelayCompleted,
     RequestRejected,
     RequestFailed,
 }
@@ -59,8 +57,6 @@ impl HttpEventKind {
             Self::ReadinessCompleted => "readiness.completed",
             Self::MoviesCompleted => "movies.completed",
             Self::RecommendationsCompleted => "recommendations.completed",
-            Self::RecommendationsFaultError => "recommendations.fault_error",
-            Self::RecommendationsFaultDelayCompleted => "recommendations.fault_delay_completed",
             Self::RequestRejected => "request.rejected",
             Self::RequestFailed => "request.failed",
         }
@@ -83,7 +79,6 @@ struct TelemetryMetrics {
     http_requests: Counter<u64>,
     http_request_duration: Histogram<f64>,
     recommendations: Counter<u64>,
-    faults: Counter<u64>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -203,28 +198,13 @@ impl Telemetry {
         );
     }
 
-    pub fn record_fault(&self, fault: &'static str) {
-        self.metrics
-            .faults
-            .add(1, &[KeyValue::new("demo.fault", fault)]);
-    }
-
-    pub(crate) fn record_starting(
-        &self,
-        address: &str,
-        port: u16,
-        movie_provider: &'static str,
-        default_fault: &'static str,
-        request_demo_faults_enabled: bool,
-    ) {
+    pub(crate) fn record_starting(&self, address: &str, port: u16, movie_provider: &'static str) {
         self.emit_event(serde_json::json!({
             "service_name": self.service_name,
             "event": "service.starting",
             "address": address,
             "port": port,
-            "movie_provider": movie_provider,
-            "default_fault": default_fault,
-            "request_demo_faults_enabled": request_demo_faults_enabled
+            "movie_provider": movie_provider
         }));
     }
 
@@ -498,10 +478,6 @@ fn build_metrics(meter: Meter) -> TelemetryMetrics {
             .u64_counter("movie_recommendation_service_recommendations_total")
             .with_description("Total recommendation items returned to callers.")
             .build(),
-        faults: meter
-            .u64_counter("movie_recommendation_service_faults_total")
-            .with_description("Total poison-pill fault activations.")
-            .build(),
     }
 }
 
@@ -531,12 +507,12 @@ mod tests {
         let labels = HttpMetricLabels {
             route: "/recommendations",
             status: 503,
-            fault: "recommendation-error",
+            fault: "none",
         };
 
         assert_eq!(labels.route, "/recommendations");
         assert_eq!(labels.status, 503);
-        assert_eq!(labels.fault, "recommendation-error");
+        assert_eq!(labels.fault, "none");
         assert_eq!(labels.attributes().len(), 3);
     }
 
@@ -549,14 +525,6 @@ mod tests {
             (
                 HttpEventKind::RecommendationsCompleted,
                 "recommendations.completed",
-            ),
-            (
-                HttpEventKind::RecommendationsFaultError,
-                "recommendations.fault_error",
-            ),
-            (
-                HttpEventKind::RecommendationsFaultDelayCompleted,
-                "recommendations.fault_delay_completed",
             ),
             (HttpEventKind::RequestRejected, "request.rejected"),
             (HttpEventKind::RequestFailed, "request.failed"),

@@ -3,9 +3,8 @@
 # Project AI Guidance
 
 This repository owns the standalone Rust/Axum movie recommendation API. It
-provides a small stable HTTP contract for the recommendation MCP, controlled
-slow/failure scenarios for the demo, and OpenTelemetry traces, metrics, and
-structured logs.
+provides a small stable HTTP contract for the recommendation MCP, artifact-selected
+catalog data, and OpenTelemetry traces, metrics, and structured logs.
 
 ## Implementation Provenance
 
@@ -14,20 +13,20 @@ structured logs.
   `demo-multi-service-observability`, at commit `3ea72f3`.
 - Commit `3ea72f3` is present in this repository's Git history and is the proven
   multi-service observability baseline.
-- Preserve the adopted Axum/Tokio, request-context, OpenTelemetry, controlled
-  fault, in-process test, lifecycle, and container behavior while stabilizing
+- Preserve the adopted Axum/Tokio, request-context, OpenTelemetry,
+  in-process test, lifecycle, and container behavior while stabilizing
   it as the independently deployable recommendation service.
 - The historical branch also contained `axum-tools-mcp/`; MCP ownership now
   belongs to `movie-recommendation-mcp`, not this service repository.
 
 ## Repository Layout
 
-- `src/main.rs`: HTTP routes, request mapping, recommendation behavior, demo
-  fault selection, and process lifecycle.
+- `src/main.rs`: composition and process lifecycle.
+- `src/domain/recommendation.rs`: pure ranking and typed calculation errors.
+- `src/services/movie/`: catalog adapter and recommendation orchestration.
 - `src/telemetry.rs`: OpenTelemetry providers, structured tracing, and bounded
   application metrics.
-- `src/recommendation/`: recommendation-domain behavior where extracted.
-- `src/http/`: HTTP-specific helpers where extracted.
+- `src/http/`: routes, input validation, response mapping, context and demo auth.
 - `Dockerfile`: immutable service artifact and health-check contract.
 - `.ai/`: canonical AI guidance, skills, and read-only review agents.
 
@@ -61,8 +60,10 @@ before handoff.
 
 - Preserve `/health`, `/ready`, `/movies`, and `/recommendations` behavior unless
   an explicit compatibility plan changes it.
-- Preserve controlled `slow-recommendation` and `recommendation-error` demo
-  behavior without allowing arbitrary fault injection.
+- Request-controlled faults are retired. Never restore header, query, or body
+  overrides for catalog selection or recommendation outcomes.
+- Keep alternate catalog data behind the default-off `catalog-snapshots` build
+  feature. Environment/artifact selection belongs to the platform owner.
 - Preserve W3C trace context and bounded correlation/request metadata.
 - Keep IDs, free text, and unbounded values out of metric labels.
 - Keep delivery/DORA telemetry outside service request telemetry.
@@ -81,8 +82,10 @@ before handoff.
 - Test handlers through an in-process Axum router rather than a real port when
   possible.
 - Test recommendation rules as ordinary Rust functions/modules.
-- Cover health/readiness, bounds/defaults, malformed input, slow/error faults,
+- Cover health/readiness, bounds/defaults, malformed input, catalog/ranking errors,
   trace/correlation parsing, and safe error responses.
+- Inject fixed calibration sources to test ranking outcomes; never rely on
+  statistical failure counts. Run tests with default and `catalog-snapshots` builds.
 - Use paused Tokio time for deterministic delay/timeout behavior when supported.
 
 ## Safety
@@ -114,11 +117,12 @@ Read the relevant rule files from `.ai/rules/` when the task matches their descr
 
 Read the relevant skill file from `.ai/skills/` when the task matches its description.
 
+- **clean-architecture**: Use when designing, reviewing, or refactoring recommendation-domain, use-case, HTTP, and infrastructure boundaries in this Rust/Axum service; skip mechanical edits with no architectural choice. (read `.ai/skills/clean-architecture/SKILL.md`)
 - **hybrid-teaching-mode**: Use for learning-first implementation, refactoring, testing, or debugging when the engineer wants meaningful hands-on practice, graduated AI guidance, or relief from overreliance and coding fatigue without receiving a black-box solution. (read `.ai/skills/hybrid-teaching-mode/SKILL.md`)
 - **principal-engineer-planner**: Use before implementation to inspect the repository, clarify requirements, compare alternatives, identify risks, and produce an implementation-ready plan under docs/plans/. (read `.ai/skills/principal-engineer-planner/SKILL.md`)
 - **programming-kb**: Use to retrieve focused local programming, backend architecture, system design, and implementation knowledge from /home/patex1987/Documents/programming_kb before broad internet search; validate externally when the user asks or the knowledge may be stale. (read `.ai/skills/programming-kb/SKILL.md`)
 - **rust-axum-service**: Use when implementing or reviewing Rust/Axum handlers, typed contracts, Tokio async behavior, errors, configuration, telemetry, and graceful shutdown. (read `.ai/skills/rust-axum-service/SKILL.md`)
-- **rust-testing**: Use when adding or reviewing Rust unit, Axum handler, async, fault-injection, telemetry-contract, and container-health tests. (read `.ai/skills/rust-testing/SKILL.md`)
+- **rust-testing**: Use when adding or reviewing Rust unit, Axum handler, async, catalog/ranking failure, telemetry-contract, and container-health tests. (read `.ai/skills/rust-testing/SKILL.md`)
 
 ## AI Review Agents
 

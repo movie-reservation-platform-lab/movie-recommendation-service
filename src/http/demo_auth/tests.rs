@@ -1,7 +1,6 @@
 use super::*;
 use crate::{
     audit::sink::{write_event, AuditSink},
-    demo_fault::FaultMode,
     services::movie::dummy::FakeMovieService,
     telemetry::Telemetry,
     SERVICE_NAME,
@@ -182,10 +181,10 @@ async fn disabled_login_does_not_emit_and_existing_api_is_unchanged() {
     let _subscriber_guard = TELEMETRY_TEST_LOCK.lock().await;
     let sink = Arc::new(MemorySink::default());
     let combined = crate::http::build_app(
-        Arc::new(FakeMovieService),
+        Arc::new(FakeMovieService::with_calibration(
+            crate::domain::recommendation::RatingCalibration::default,
+        )),
         Arc::new(Telemetry::noop(SERVICE_NAME)),
-        FaultMode::None,
-        true,
     )
     .merge(app(sink.clone(), false));
     let response = combined.clone().oneshot(request("{}")).await.unwrap();

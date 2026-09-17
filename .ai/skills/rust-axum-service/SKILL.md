@@ -1,6 +1,6 @@
 ---
 name: rust-axum-service
-description: Use when implementing, refactoring, reviewing, or explaining this Rust/Axum HTTP service, including typed request and response contracts, extractors, Tokio async behavior, error handling, configuration, OpenTelemetry integration, controlled fault injection, and graceful shutdown.
+description: Use when implementing, refactoring, reviewing, or explaining this Rust/Axum HTTP service, including typed request and response contracts, extractors, Tokio async behavior, error handling, configuration, OpenTelemetry integration, catalog selection, and graceful shutdown.
 ---
 
 # Rust Axum Service
@@ -21,7 +21,7 @@ obvious.
 
 ## Rust Design
 
-- Model bounded states and fault modes with enums rather than free-form strings.
+- Model bounded states and failure types with enums rather than free-form strings.
 - Use typed request/response structs with Serde at the HTTP boundary.
 - Use `Result`, `Option`, and `?` for expected absence/failure; map errors to a
   stable safe HTTP contract at the edge.
@@ -54,15 +54,15 @@ obvious.
 - Separate safe client errors from internal diagnostic context.
 - Do not log secrets, full provider payloads, or unbounded request content.
 - Validate configured endpoints and propagated headers.
-- Keep controlled demo faults allowlisted and visibly separate from normal
-  recommendation behavior.
+- Do not accept request-controlled faults or caller-selected catalog snapshots.
+- Keep random snapshot sampling in the catalog adapter; domain ranking stays pure.
 
 ## Observability
 
 - Extract W3C trace context at the inbound boundary and preserve correlation
   fields in spans/logs.
 - Use low-cardinality metric attributes such as route, outcome, status class,
-  and allowlisted fault mode.
+  and the fixed compatibility fault value.
 - Keep request/trace/user/movie IDs out of metric labels.
 - Record enough duration/outcome evidence to explain slow and failed demo paths.
 
@@ -71,5 +71,5 @@ obvious.
 1. Inspect the current route and response contract.
 2. Identify ownership, compatibility, and failure semantics.
 3. Change the smallest handler/domain/telemetry boundary.
-4. Add focused tests for normal, invalid, slow, and failure behavior.
+4. Add focused tests for normal, invalid, and catalog/ranking failure behavior.
 5. Run format, Clippy with warnings denied, and the full test suite.

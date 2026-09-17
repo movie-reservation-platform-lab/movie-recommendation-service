@@ -14,12 +14,12 @@ test("production image is non-root and exposes the stable runtime contract", () 
   assert.match(dockerfile, /http:\/\/127\.0\.0\.1:\$\{PORT:-8082\}\/ready/);
 });
 
-test("container smoke covers normal and controlled fault paths", () => {
+test("container smoke covers health and retired fault controls", () => {
   assert.match(smoke, /\/health/);
   assert.match(smoke, /\/ready/);
   assert.match(smoke, /slow-recommendation/);
   assert.match(smoke, /recommendation-error/);
-  assert.match(smoke, /test "\$error_status" = "503"/);
+  assert.match(smoke, /test "\$status" = "200"/);
   assert.match(smoke, /docker exec .* id -u/);
 });
 
