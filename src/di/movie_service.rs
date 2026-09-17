@@ -5,6 +5,6 @@ use std::sync::Arc;
 
 pub fn create_movie_service(provider: MovieProvider) -> Arc<dyn AsyncMovieService> {
     match provider {
-        MovieProvider::Dummy => Arc::new(FakeMovieService),
+        MovieProvider::Dummy => Arc::new(FakeMovieService::default()),
     }
 }

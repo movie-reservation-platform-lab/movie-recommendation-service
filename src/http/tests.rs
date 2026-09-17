@@ -14,16 +14,13 @@ use tower::ServiceExt;
 const MAX_TEST_BODY_BYTES: usize = 1024 * 1024;
 
 fn test_app() -> Router {
-    test_app_with(Arc::new(FakeMovieService), FaultMode::None)
+    test_app_with(Arc::new(FakeMovieService::with_calibration(
+        crate::domain::recommendation::RatingCalibration::default,
+    )))
 }
 
-fn test_app_with(movie_service: Arc<dyn AsyncMovieService>, default_fault: FaultMode) -> Router {
-    build_app(
-        movie_service,
-        Arc::new(Telemetry::noop(SERVICE_NAME)),
-        default_fault,
-        true,
-    )
+fn test_app_with(movie_service: Arc<dyn AsyncMovieService>) -> Router {
+    build_app(movie_service, Arc::new(Telemetry::noop(SERVICE_NAME)))
 }
 
 fn get(uri: &str) -> Request<Body> {
@@ -169,102 +166,6 @@ async fn oversized_preference_returns_safe_json_error() {
 }
 
 #[tokio::test]
-async fn recommendation_error_fault_returns_exact_503_contract() {
-    let request = Request::builder()
-        .uri("/recommendations")
-        .header("x-demo-fault", "recommendation-error")
-        .body(Body::empty())
-        .unwrap();
-    let response = test_app().oneshot(request).await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let body = response_json(response).await;
-    assert_eq!(body["error"]["code"], "recommendation_unavailable");
-    assert_eq!(body["error"]["fault"], "recommendation-error");
-}
-
-#[tokio::test(start_paused = true)]
-async fn slow_fault_uses_tokio_time_then_succeeds() {
-    let started_at = Instant::now();
-    let request = Request::builder()
-        .uri("/recommendations?limit=1")
-        .header("x-demo-fault", "slow-recommendation")
-        .body(Body::empty())
-        .unwrap();
-    let response = test_app().oneshot(request).await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(started_at.elapsed(), SLOW_RECOMMENDATION_DELAY);
-    let body = response_json(response).await;
-    assert_eq!(body["recommendations"].as_array().unwrap().len(), 1);
-}
-
-#[tokio::test]
-async fn configured_fault_is_fallback_and_header_takes_precedence() {
-    let configured_app = test_app_with(Arc::new(FakeMovieService), FaultMode::RecommendationError);
-    let fallback_response = configured_app
-        .clone()
-        .oneshot(get("/recommendations"))
-        .await
-        .unwrap();
-    let override_request = Request::builder()
-        .uri("/recommendations")
-        .header("x-demo-fault", "none")
-        .body(Body::empty())
-        .unwrap();
-    let override_response = configured_app.oneshot(override_request).await.unwrap();
-
-    assert_eq!(fallback_response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    assert_eq!(override_response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn request_fault_header_is_ignored_when_gate_is_disabled() {
-    let app = build_app(
-        Arc::new(FakeMovieService),
-        Arc::new(Telemetry::noop(SERVICE_NAME)),
-        FaultMode::None,
-        false,
-    );
-    let request = Request::builder()
-        .uri("/recommendations?limit=1")
-        .header("x-demo-fault", "recommendation-error")
-        .body(Body::empty())
-        .unwrap();
-
-    let response = app.oneshot(request).await.unwrap();
-
-    assert_eq!(response.status(), StatusCode::OK);
-}
-
-#[tokio::test]
-async fn unknown_or_oversized_header_fault_is_safe_none() {
-    let oversized = "a".repeat(MAX_FAULT_HEADER_BYTES + 1);
-    for fault in ["unknown".to_owned(), oversized] {
-        let request = Request::builder()
-            .uri("/recommendations?limit=1")
-            .header("x-demo-fault", fault)
-            .body(Body::empty())
-            .unwrap();
-        let response = test_app().oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-    }
-}
-
-#[tokio::test]
-async fn faults_do_not_affect_health_readiness_or_movies() {
-    for uri in ["/health", "/ready", "/movies?limit=1"] {
-        let request = Request::builder()
-            .uri(uri)
-            .header("x-demo-fault", "recommendation-error")
-            .body(Body::empty())
-            .unwrap();
-        let response = test_app().oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK, "uri: {uri}");
-    }
-}
-
-#[tokio::test]
 async fn bounded_context_headers_are_echoed() {
     let request = Request::builder()
         .uri("/health")
@@ -295,7 +196,7 @@ async fn oversized_context_header_is_replaced() {
 
 #[tokio::test]
 async fn movie_service_failure_returns_safe_500() {
-    let response = test_app_with(Arc::new(FailingMovieService), FaultMode::None)
+    let response = test_app_with(Arc::new(FailingMovieService))
         .oneshot(get("/recommendations"))
         .await
         .unwrap();
@@ -323,4 +224,127 @@ impl AsyncMovieService for FailingMovieService {
     ) -> anyhow::Result<Vec<MovieRecommendation>> {
         anyhow::bail!("provider-secret diagnostic")
     }
+}
+
+fn single_rating_calibration() -> crate::domain::recommendation::RatingCalibration {
+    crate::domain::recommendation::RatingCalibration {
+        minimum: 8.0,
+        maximum: 8.0,
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn request_metadata_cannot_select_or_bypass_ranking_outcomes() {
+    use crate::domain::recommendation::RatingCalibration;
+    for (calibration, expected) in [
+        (
+            RatingCalibration::default as fn() -> RatingCalibration,
+            StatusCode::OK,
+        ),
+        (single_rating_calibration, StatusCode::INTERNAL_SERVER_ERROR),
+    ] {
+        let app = test_app_with(Arc::new(FakeMovieService::with_calibration(calibration)));
+        for fault in [
+            None,
+            Some("none"),
+            Some("slow-recommendation"),
+            Some("recommendation-error"),
+            Some("unknown"),
+        ] {
+            for limit in [0, 1, 5, 20, 100] {
+                let mut request = Request::builder()
+                    .uri(format!("/recommendations?limit={limit}&preference=sci-fi&fault=none&snapshot=0&seed=1"))
+                    .header("x-correlation-id", "ranking-request")
+                    .header("x-request-id", "ranking-attempt");
+                if let Some(fault) = fault {
+                    request = request.header("x-demo-fault", fault);
+                }
+                let started = Instant::now();
+                let response = app
+                    .clone()
+                    .oneshot(request.body(Body::empty()).unwrap())
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), expected);
+                assert_eq!(started.elapsed(), Duration::ZERO);
+                assert_eq!(response.headers()["x-correlation-id"], "ranking-request");
+                assert_eq!(response.headers()["x-request-id"], "ranking-attempt");
+                let body = response_json(response).await;
+                if expected == StatusCode::INTERNAL_SERVER_ERROR {
+                    assert_eq!(
+                        body,
+                        serde_json::json!({"error": {"code": "internal_error", "message": "Recommendation service failed", "fault": "none"}})
+                    );
+                } else {
+                    assert_eq!(
+                        body["recommendations"].as_array().unwrap().len(),
+                        limit.min(10)
+                    );
+                }
+            }
+        }
+        for uri in ["/health", "/ready", "/movies"] {
+            let response = app.clone().oneshot(get(uri)).await.unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+        }
+        let response = app
+            .oneshot(get("/recommendations?limit=invalid"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+}
+
+#[tokio::test]
+async fn ranking_failure_exports_correlated_error_spans() {
+    use opentelemetry::trace::{Status, TracerProvider};
+    use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+    use tracing_subscriber::prelude::*;
+    let exporter = InMemorySpanExporter::default();
+    let provider = SdkTracerProvider::builder()
+        .with_simple_exporter(exporter.clone())
+        .build();
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_opentelemetry::layer().with_tracer(provider.tracer(SERVICE_NAME)));
+    let _dispatcher = tracing::subscriber::set_default(subscriber);
+    let app = test_app_with(Arc::new(FakeMovieService::with_calibration(
+        single_rating_calibration,
+    )));
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/recommendations")
+                .header(
+                    "traceparent",
+                    "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+                )
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    provider.force_flush().unwrap();
+    let spans = exporter.get_finished_spans().unwrap();
+    let http = spans
+        .iter()
+        .find(|span| span.name == "http.request")
+        .unwrap();
+    let rank = spans
+        .iter()
+        .find(|span| span.name == "recommendations.rank")
+        .unwrap();
+    assert_eq!(rank.parent_span_id, http.span_context.span_id());
+    for span in [http, rank] {
+        assert_eq!(
+            span.span_context.trace_id().to_string(),
+            "4bf92f3577b34da6a3ce929d0e0e4736"
+        );
+        assert!(matches!(span.status, Status::Error { .. }));
+    }
+    assert!(rank
+        .attributes
+        .iter()
+        .any(|attribute| attribute.key.as_str() == "error.type"
+            && attribute.value.as_str() == "non_finite_score"));
 }
