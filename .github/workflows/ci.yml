@@ -57,6 +57,9 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets --locked
 
+      - name: Test alternate catalog artifact
+        run: cargo test --all-targets --locked --features catalog-snapshots
+
       - name: Build release binary
         run: cargo build --release --locked
 
@@ -93,7 +96,7 @@ jobs:
       - name: Build production image
         run: docker build --platform linux/amd64 --target runtime --tag movie-recommendation-service:smoke .
 
-      - name: Verify runtime and controlled fault paths
+      - name: Verify runtime and retired fault controls
         run: bash automation/container-smoke.sh movie-recommendation-service:smoke
 
   container-security-check:

@@ -5,10 +5,11 @@ FROM rust:1-bookworm AS build
 WORKDIR /app
 COPY Cargo.toml Cargo.lock /app/
 COPY src /app/src
+ARG SERVICE_FEATURES=""
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/app/target \
-    cargo build --release --locked && \
+    cargo build --release --locked --features "$SERVICE_FEATURES" && \
     cp /app/target/release/movie_recommendation_service /tmp/movie-recommendation-service
 
 FROM debian:trixie-slim AS runtime

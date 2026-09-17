@@ -25,8 +25,6 @@ Runtime configuration is parsed once at startup:
 | --- | --- | --- |
 | `PORT` | `8082` | Integer from 1 through 65535 |
 | `USE_DUMMY` | `true` | Must be `true`; no external provider exists |
-| `DEMO_FAULT_MODE` | `none` | Allowlisted recommendation fault fallback |
-| `ALLOW_REQUEST_DEMO_FAULTS` | `false` | Enables the allowlisted `X-Demo-Fault` header when `true` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | unset | Validated HTTP(S) base URI for OTLP HTTP trace/metric export |
 | `OTEL_RESOURCE_ATTRIBUTES` | SDK defaults | Platform-owned resource attributes such as deployment environment |
 | `RUST_LOG` | `info` | `tracing-subscriber` filter |
@@ -105,47 +103,27 @@ preference uses `error.code=invalid_preference`; other deserialization failures
 use `error.code=invalid_query`. Internal failures return HTTP 500 with
 `error.code=internal_error` and do not expose provider diagnostics.
 
-## Demo Faults
+## Catalog artifacts
 
-Faults are only applied to `GET /recommendations`. Request-controlled faults
-are disabled by default; explicitly enable them in a demo environment:
-
-```sh
-ALLOW_REQUEST_DEMO_FAULTS=true USE_DUMMY=true PORT=8082 cargo run
-```
-
-Then use `X-Demo-Fault`:
+The default build uses baseline rating calibration. An alternate catalog artifact
+samples a calibration snapshot once per recommendation attempt:
 
 ```sh
-curl -H 'X-Demo-Fault: slow-recommendation' \
-  'http://127.0.0.1:8082/recommendations?limit=2'
+cargo run --features catalog-snapshots
+docker build --build-arg SERVICE_FEATURES=catalog-snapshots \
+  -t movie-recommendation-service:catalog-snapshots .
 ```
 
-Supported values:
+Select the immutable image digest through the platform environment repository.
+Recovery uses the prior image or the default build. Recommendation data errors
+return the existing safe HTTP 500 envelope; health, readiness, authentication and
+movie listing are independent of ranking. Retries belong to callers.
 
-- `none`
-- `slow-recommendation`
-- `recommendation-error`
-
-When request faults are enabled, a present header takes precedence over
-`DEMO_FAULT_MODE`, including an unknown value being treated as `none`. When the
-gate is disabled, the header is ignored and the typed startup fallback is used.
-Faults never apply to health, readiness, or movie listing.
-
-`recommendation-error` returns HTTP 503:
-
-```json
-{
-  "error": {
-    "code": "recommendation_unavailable",
-    "message": "Recommendation service unavailable for demo fault",
-    "fault": "recommendation-error"
-  }
-}
-```
-
-`slow-recommendation` waits asynchronously for two seconds and then follows the
-normal success path.
+`X-Demo-Fault`, `DEMO_FAULT_MODE`, and `ALLOW_REQUEST_DEMO_FAULTS` are retired and
+ignored. Requests cannot select snapshots or change catalog behavior. The legacy
+`fault` response/metric field remains `none` for compatibility. Injected-fault
+counters and events have been removed; request status/duration and ranking error
+spans describe failures.
 
 ## Observability and Lifecycle
 
@@ -158,7 +136,7 @@ blocking HTTP work and reports the aggregate drop count during shutdown.
 
 OpenTelemetry export is optional. Exporter construction or export failure does
 not make health/readiness fail. Request metric attributes are limited to static
-route, HTTP status, boolean preference presence, and allowlisted fault values;
+route, HTTP status, boolean preference presence, and the compatibility fault value;
 request, trace, user, and movie IDs are not metric labels.
 
 The process handles Ctrl-C and Unix SIGTERM through Axum graceful shutdown.
@@ -183,8 +161,7 @@ Runtime expectations:
 - the image health check resolves `${PORT:-8082}`
 - no secrets are required for the current deterministic provider
 - optional OTLP HTTP endpoint via `OTEL_EXPORTER_OTLP_ENDPOINT`
-- request-controlled demo faults are off unless
-  `ALLOW_REQUEST_DEMO_FAULTS=true` is explicitly configured
+- request-controlled fault behavior is unavailable
 - SIGTERM initiates graceful HTTP shutdown and bounded telemetry flush
 
 Build locally:
