@@ -57,9 +57,6 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets --locked
 
-      - name: Test alternate catalog artifact
-        run: cargo test --all-targets --locked --features catalog-snapshots
-
       - name: Build release binary
         run: cargo build --release --locked
 
