@@ -18,7 +18,7 @@ use std::{
         Mutex,
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tracing::warn;
 use tracing_opentelemetry::OpenTelemetryLayer;
@@ -26,6 +26,8 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 pub struct Telemetry {
     service_name: &'static str,
+    service_version: String,
+    deployment_environment: String,
     metrics: TelemetryMetrics,
     tracer_provider: Option<SdkTracerProvider>,
     meter_provider: SdkMeterProvider,
@@ -65,10 +67,10 @@ impl HttpEventKind {
 
 pub(crate) struct HttpRequestEvent<'a> {
     pub(crate) kind: HttpEventKind,
-    pub(crate) trace_id: &'a str,
+    pub(crate) trace_id: Option<&'a str>,
+    pub(crate) span_id: Option<&'a str>,
     pub(crate) correlation_id: &'a str,
     pub(crate) request_id: &'a str,
-    pub(crate) fault: &'static str,
     pub(crate) route: &'static str,
     pub(crate) status: u16,
     pub(crate) duration_ms: u64,
@@ -85,16 +87,33 @@ struct TelemetryMetrics {
 struct HttpMetricLabels {
     route: &'static str,
     status: u16,
-    fault: &'static str,
 }
 
 impl HttpMetricLabels {
-    fn attributes(self) -> [KeyValue; 3] {
+    fn attributes(self) -> [KeyValue; 4] {
         [
             KeyValue::new("http.route", self.route),
             KeyValue::new("http.status_code", i64::from(self.status)),
-            KeyValue::new("demo.fault", self.fault),
+            KeyValue::new("http.status_class", status_class(self.status)),
+            KeyValue::new("outcome", request_outcome(self.status)),
         ]
+    }
+}
+
+const fn status_class(status: u16) -> &'static str {
+    match status {
+        200..=299 => "2xx",
+        400..=499 => "4xx",
+        500..=599 => "5xx",
+        _ => "other",
+    }
+}
+
+const fn request_outcome(status: u16) -> &'static str {
+    match status {
+        200..=399 => "success",
+        400..=499 => "client_error",
+        _ => "server_error",
     }
 }
 
@@ -158,6 +177,8 @@ impl Telemetry {
         let meter_provider = SdkMeterProvider::builder().build();
         Self {
             service_name,
+            service_version: "test".into(),
+            deployment_environment: "test".into(),
             metrics: build_metrics(meter_provider.meter(service_name)),
             tracer_provider: None,
             meter_provider,
@@ -169,7 +190,6 @@ impl Telemetry {
         let attributes = HttpMetricLabels {
             route: event.route,
             status: event.status,
-            fault: event.fault,
         }
         .attributes();
 
@@ -178,17 +198,12 @@ impl Telemetry {
             .http_request_duration
             .record(event.duration_ms as f64, &attributes);
 
-        self.emit_event(serde_json::json!({
-            "service_name": self.service_name,
-            "event": event.kind.as_str(),
-            "trace_id": event.trace_id,
-            "correlation_id": event.correlation_id,
-            "request_id": event.request_id,
-            "fault": event.fault,
-            "http_route": event.route,
-            "http_status": event.status,
-            "duration_ms": event.duration_ms
-        }));
+        self.emit_event(http_event_json(
+            self.service_name,
+            &self.service_version,
+            &self.deployment_environment,
+            event,
+        ));
     }
 
     pub fn record_recommendations(&self, count: usize, preference_present: bool) {
@@ -305,11 +320,50 @@ pub fn init(
 
     Ok(Telemetry {
         service_name,
+        service_version: identity.version.clone(),
+        deployment_environment: identity.environment.clone(),
         metrics: build_metrics(meter_provider.meter(service_name)),
         tracer_provider,
         meter_provider,
         event_logger: Some(event_logger),
     })
+}
+
+fn http_event_json(
+    service_name: &'static str,
+    service_version: &str,
+    deployment_environment: &str,
+    event: HttpRequestEvent<'_>,
+) -> serde_json::Value {
+    let timestamp_unix_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let severity = match event.status {
+        500..=599 => "ERROR",
+        400..=499 => "WARN",
+        _ => "INFO",
+    };
+    let mut value = serde_json::json!({
+        "timestamp_unix_ms": timestamp_unix_ms,
+        "severity_text": severity,
+        "service_name": service_name,
+        "service_version": service_version,
+        "deployment_environment": deployment_environment,
+        "event": event.kind.as_str(),
+        "correlation_id": event.correlation_id,
+        "request_id": event.request_id,
+        "http_route": event.route,
+        "http_status": event.status,
+        "duration_ms": event.duration_ms
+    });
+    if let Some(trace_id) = event.trace_id {
+        value["trace_id"] = serde_json::Value::String(trace_id.into());
+    }
+    if let Some(span_id) = event.span_id {
+        value["span_id"] = serde_json::Value::String(span_id.into());
+    }
+    value
 }
 
 fn emit_json_error(event: serde_json::Value) {
@@ -467,7 +521,7 @@ fn build_metrics(meter: Meter) -> TelemetryMetrics {
     TelemetryMetrics {
         http_requests: meter
             .u64_counter("movie_recommendation_service_http_requests_total")
-            .with_description("Total inbound HTTP requests handled by route, status, and fault.")
+            .with_description("Total inbound HTTP requests handled by route, status, and outcome.")
             .build(),
         http_request_duration: meter
             .f64_histogram("movie_recommendation_service_http_request_duration_ms")
@@ -507,13 +561,13 @@ mod tests {
         let labels = HttpMetricLabels {
             route: "/recommendations",
             status: 503,
-            fault: "none",
         };
 
         assert_eq!(labels.route, "/recommendations");
         assert_eq!(labels.status, 503);
-        assert_eq!(labels.fault, "none");
-        assert_eq!(labels.attributes().len(), 3);
+        assert_eq!(labels.attributes().len(), 4);
+        assert_eq!(status_class(503), "5xx");
+        assert_eq!(request_outcome(503), "server_error");
     }
 
     #[test]
@@ -543,6 +597,170 @@ mod tests {
         write_json_line(&mut output, &event);
 
         assert_eq!(output, b"{\"event\":\"health.completed\"}\n");
+    }
+
+    #[test]
+    fn request_event_contains_resource_and_real_span_correlation() {
+        let event = http_event_json(
+            crate::SERVICE_NAME,
+            "build-123",
+            "test",
+            HttpRequestEvent {
+                kind: HttpEventKind::RequestFailed,
+                trace_id: Some("4bf92f3577b34da6a3ce929d0e0e4736"),
+                span_id: Some("00f067aa0ba902b7"),
+                correlation_id: "correlation-123",
+                request_id: "request-123",
+                route: "/recommendations",
+                status: 500,
+                duration_ms: 12,
+            },
+        );
+
+        assert_eq!(event["severity_text"], "ERROR");
+        assert_eq!(event["service_name"], crate::SERVICE_NAME);
+        assert_eq!(event["service_version"], "build-123");
+        assert_eq!(event["deployment_environment"], "test");
+        assert_eq!(event["trace_id"], "4bf92f3577b34da6a3ce929d0e0e4736");
+        assert_eq!(event["span_id"], "00f067aa0ba902b7");
+        assert!(event["timestamp_unix_ms"].is_number());
+    }
+
+    #[test]
+    fn request_event_omits_trace_fields_without_an_active_span() {
+        let event = http_event_json(
+            crate::SERVICE_NAME,
+            "build-123",
+            "test",
+            HttpRequestEvent {
+                kind: HttpEventKind::RequestRejected,
+                trace_id: None,
+                span_id: None,
+                correlation_id: "correlation-123",
+                request_id: "request-123",
+                route: "/recommendations",
+                status: 400,
+                duration_ms: 1,
+            },
+        );
+
+        assert_eq!(event["severity_text"], "WARN");
+        assert!(event.get("trace_id").is_none());
+        assert!(event.get("span_id").is_none());
+    }
+
+    #[test]
+    fn exported_http_metrics_prove_exact_resource_series_and_aggregation() {
+        use opentelemetry_sdk::metrics::{
+            data::{AggregatedMetrics, MetricData},
+            InMemoryMetricExporter,
+        };
+
+        let identity = EventIdentity::from_values(Some("build-123"), Some("test")).unwrap();
+        let exporter = InMemoryMetricExporter::default();
+        let meter_provider = SdkMeterProvider::builder()
+            .with_resource(resource(crate::SERVICE_NAME, &identity))
+            .with_periodic_exporter(exporter.clone())
+            .build();
+        let telemetry = Telemetry {
+            service_name: crate::SERVICE_NAME,
+            service_version: identity.version.clone(),
+            deployment_environment: identity.environment.clone(),
+            metrics: build_metrics(meter_provider.meter(crate::SERVICE_NAME)),
+            tracer_provider: None,
+            meter_provider,
+            event_logger: None,
+        };
+
+        for (kind, status) in [
+            (HttpEventKind::RecommendationsCompleted, 200),
+            (HttpEventKind::RequestRejected, 400),
+            (HttpEventKind::RequestFailed, 500),
+        ] {
+            telemetry.record_http_event(HttpRequestEvent {
+                kind,
+                trace_id: None,
+                span_id: None,
+                correlation_id: "not-a-metric-label",
+                request_id: "not-a-metric-label",
+                route: "/recommendations",
+                status,
+                duration_ms: u64::from(status / 100),
+            });
+        }
+        telemetry.meter_provider.force_flush().unwrap();
+
+        let exports = exporter.get_finished_metrics().unwrap();
+        let payload = exports.last().unwrap();
+        for (key, expected) in [
+            ("service.name", crate::SERVICE_NAME),
+            ("service.version", "build-123"),
+            ("deployment.environment.name", "test"),
+        ] {
+            assert_eq!(
+                payload
+                    .resource()
+                    .get(&opentelemetry::Key::from_static_str(key)),
+                Some(opentelemetry::Value::from(expected))
+            );
+        }
+        let metrics = payload
+            .scope_metrics()
+            .flat_map(|scope| scope.metrics())
+            .collect::<Vec<_>>();
+        let requests = metrics
+            .iter()
+            .find(|metric| metric.name() == "movie_recommendation_service_http_requests_total")
+            .unwrap();
+        let durations = metrics
+            .iter()
+            .find(|metric| metric.name() == "movie_recommendation_service_http_request_duration_ms")
+            .unwrap();
+        assert_eq!(requests.unit(), "");
+        assert_eq!(durations.unit(), "ms");
+
+        let AggregatedMetrics::U64(MetricData::Sum(request_sum)) = requests.data() else {
+            panic!("request counter must export a u64 sum");
+        };
+        assert!(request_sum.is_monotonic());
+        assert_eq!(
+            request_sum.temporality(),
+            opentelemetry_sdk::metrics::Temporality::Cumulative
+        );
+        let points = request_sum.data_points().collect::<Vec<_>>();
+        assert_eq!(points.len(), 3);
+        assert!(points.iter().all(|point| point.value() == 1));
+        for (status, class, outcome) in [
+            (200_i64, "2xx", "success"),
+            (400_i64, "4xx", "client_error"),
+            (500_i64, "5xx", "server_error"),
+        ] {
+            assert!(points.iter().any(|point| {
+                let attributes = point
+                    .attributes()
+                    .map(|item| (item.key.as_str(), item.value.to_string()))
+                    .collect::<Vec<_>>();
+                attributes.contains(&("http.route", "/recommendations".into()))
+                    && attributes.contains(&("http.status_code", status.to_string()))
+                    && attributes.contains(&("http.status_class", class.into()))
+                    && attributes.contains(&("outcome", outcome.into()))
+                    && !attributes.iter().any(|(key, _)| {
+                        matches!(
+                            *key,
+                            "request_id" | "correlation_id" | "trace_id" | "demo.fault"
+                        )
+                    })
+            }));
+        }
+
+        let AggregatedMetrics::F64(MetricData::Histogram(duration_histogram)) = durations.data()
+        else {
+            panic!("request duration must export an f64 histogram");
+        };
+        assert_eq!(duration_histogram.data_points().count(), 3);
+        assert!(duration_histogram
+            .data_points()
+            .all(|point| point.count() == 1));
     }
 
     #[test]
