@@ -118,23 +118,25 @@ environment repository.
 
 `X-Demo-Fault`, `DEMO_FAULT_MODE`, and `ALLOW_REQUEST_DEMO_FAULTS` are retired and
 ignored. Requests cannot select snapshots or change catalog behavior. The legacy
-`fault` response/metric field remains `none` for compatibility. Injected-fault
-counters and events have been removed; request status/duration and ranking error
-spans describe failures.
+`fault` response field remains `none` for compatibility. Injected-fault counters,
+events and metric dimensions have been removed; request status/duration and
+ranking error spans describe failures.
 
 ## Observability and Lifecycle
 
 Application lifecycle and completed-request records are emitted as one JSON
-object per line. Request records contain bounded `service_name`, `event`,
-`trace_id`, `correlation_id`, `request_id`, `fault`, `http_route`, `http_status`,
-and `duration_ms` fields. Request workers enqueue these records without waiting
+object per line. Request records contain bounded service/release identity, event,
+correlation, route, status and duration fields; valid active trace/span IDs are
+included when available. Request workers enqueue these records without waiting
 on stdout. The bounded 1,024-record queue drops excess events rather than
 blocking HTTP work and reports the aggregate drop count during shutdown.
 
 OpenTelemetry export is optional. Exporter construction or export failure does
 not make health/readiness fail. Request metric attributes are limited to static
-route, HTTP status, boolean preference presence, and the compatibility fault value;
-request, trace, user, and movie IDs are not metric labels.
+route, bounded HTTP status class/outcome and HTTP status; request, trace, user,
+and movie IDs are not metric labels. See the
+[producer signal contract and observed payload](docs/observability.md) for exact
+native instrument names, units, attributes and zero/idle/stale behavior.
 
 The process handles Ctrl-C and Unix SIGTERM through Axum graceful shutdown.
 Trace and metric providers receive a shared five-second shutdown budget; the

@@ -17,7 +17,7 @@ static REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug)]
 pub(super) struct RequestContext {
-    pub(super) trace_id: String,
+    pub(super) trace_id: Option<String>,
     pub(super) correlation_id: String,
     pub(super) request_id: String,
 }
@@ -29,9 +29,9 @@ impl RequestContext {
             let span = parent_context.span();
             let span_context = span.span_context();
             if span_context.is_valid() {
-                span_context.trace_id().to_string()
+                Some(span_context.trace_id().to_string())
             } else {
-                generated_trace_id()
+                None
             }
         };
 
@@ -82,17 +82,6 @@ impl Extractor for HeaderMapExtractor<'_> {
     }
 }
 
-fn generated_trace_id() -> String {
-    let sequence = u128::from(REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed));
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let time_component = nanos & u128::from(u64::MAX);
-    let value = (time_component << u64::BITS) | sequence;
-    format!("{value:032x}")
-}
-
 fn generated_id(prefix: &str) -> String {
     let sequence = REQUEST_SEQUENCE.fetch_add(1, Ordering::Relaxed);
     let millis = SystemTime::now()
@@ -120,7 +109,7 @@ mod tests {
 
         let (context, parent) = RequestContext::from_headers(&headers);
 
-        assert_eq!(context.trace_id, VALID_TRACE_ID);
+        assert_eq!(context.trace_id.as_deref(), Some(VALID_TRACE_ID));
         assert!(parent.span().span_context().is_remote());
     }
 
@@ -140,8 +129,7 @@ mod tests {
 
             let (context, parent) = RequestContext::from_headers(&headers);
 
-            assert_ne!(context.trace_id, VALID_TRACE_ID, "value: {traceparent}");
-            assert_eq!(context.trace_id.len(), 32);
+            assert_eq!(context.trace_id, None, "value: {traceparent}");
             assert!(!parent.span().span_context().is_valid());
         }
     }

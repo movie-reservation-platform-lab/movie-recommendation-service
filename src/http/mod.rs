@@ -403,18 +403,21 @@ fn record_http_event(
     }
     let span_context = current_span.context();
     let span = span_context.span();
-    let trace_id = if span.span_context().is_valid() {
-        span.span_context().trace_id().to_string()
+    let (trace_id, span_id) = if span.span_context().is_valid() {
+        (
+            Some(span.span_context().trace_id().to_string()),
+            Some(span.span_context().span_id().to_string()),
+        )
     } else {
-        context.trace_id.clone()
+        (context.trace_id.clone(), None)
     };
 
     telemetry.record_http_event(HttpRequestEvent {
         kind: event,
-        trace_id: &trace_id,
+        trace_id: trace_id.as_deref(),
+        span_id: span_id.as_deref(),
         correlation_id: &context.correlation_id,
         request_id: &context.request_id,
-        fault: "none",
         route: http_route,
         status: http_status.as_u16(),
         duration_ms,
