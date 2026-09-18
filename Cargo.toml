@@ -3,10 +3,6 @@ name = "movie_recommendation_service"
 version = "0.1.0"
 edition = "2021"
 
-[features]
-default = []
-catalog-snapshots = []
-
 [dependencies]
 anyhow = "1.0.100"
 async-trait = "0.1.89"

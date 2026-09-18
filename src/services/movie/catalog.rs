@@ -112,7 +112,6 @@ pub(super) fn seed_movies() -> Vec<Movie> {
 
 use crate::domain::recommendation::RatingCalibration;
 
-#[cfg(any(feature = "catalog-snapshots", test))]
 const SNAPSHOTS: [RatingCalibration; 20] = [
     RatingCalibration {
         minimum: 0.0,
@@ -197,17 +196,9 @@ const SNAPSHOTS: [RatingCalibration; 20] = [
 ];
 
 pub(super) fn selected_calibration() -> RatingCalibration {
-    #[cfg(feature = "catalog-snapshots")]
-    {
-        sample_calibration(|| uuid::Uuid::new_v4().as_bytes()[0])
-    }
-    #[cfg(not(feature = "catalog-snapshots"))]
-    {
-        RatingCalibration::default()
-    }
+    sample_calibration(|| uuid::Uuid::new_v4().as_bytes()[0])
 }
 
-#[cfg(any(feature = "catalog-snapshots", test))]
 fn sample_calibration(mut next_byte: impl FnMut() -> u8) -> RatingCalibration {
     // Reject the incomplete final bucket to keep each snapshot equally likely.
     let bucket_end = 256 / SNAPSHOTS.len() * SNAPSHOTS.len();

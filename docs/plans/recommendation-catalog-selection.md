@@ -1,12 +1,12 @@
 # Implementation Plan: Recommendation catalog selection
 
 ## 1. Summary
-Extract ranking into the domain and introduce artifact-selected catalog snapshots.
+Extract ranking into the domain and introduce catalog calibration snapshots.
 Remove obsolete request and environment fault controls.
 
 ## 2. Goals
-Thin HTTP handlers, deterministic ranking, safe provider errors, isolated build
-selection, and unchanged health, readiness, authentication and movie listing.
+Thin HTTP handlers, deterministic ranking, safe provider errors, and unchanged
+health, readiness, authentication and movie listing.
 
 ## 3. Non-goals
 Other repositories, deployment, operator control APIs, retries, interview material.
@@ -17,10 +17,9 @@ Other repositories, deployment, operator control APIs, retries, interview materi
 controls. The service already has an asynchronous port and safe HTTP 500 mapping.
 
 ## 5. Requirements and Assumptions
-This implementation uses artifact selection instead of #15's older runtime
-policy proposal. Use a default-off Cargo feature for the separate catalog artifact; select it at
-build time, never via request metadata. Each recommendation attempt samples one
-snapshot; workflow retries are outside this service. No new dependencies.
+The canonical service samples one catalog snapshot per recommendation attempt.
+Callers cannot select or bypass snapshots through request metadata. Workflow
+retries are outside this service. No new dependencies.
 
 ## 6. Proposed Design
 Domain owns rating calibration, finite-score validation and ranking. The catalog
@@ -31,7 +30,8 @@ safe error envelope. Sampling accepts a deterministic substitute in tests.
 ## 7. Alternatives Considered
 Request-level random errors are shallow and disconnect failures from data.
 An authenticated runtime policy adds a control plane outside the requested scope.
-Artifact-selected catalog data provides an immutable rollout and rollback unit.
+Catalog data in the canonical release resembles an ordinary production defect;
+the previously published healthy digest remains the rollback unit.
 
 ## 8. API / Interface Changes
 Response shapes, limits and correlation stay stable. `X-Demo-Fault` and legacy
@@ -55,25 +55,27 @@ network calls or sleeps. Validate computed scores before sorting/serialization.
    snapshots directly and deterministically through the service boundary.
 3. Remove header/environment controls and test both HTTP outcomes and unaffected
    endpoints with fixed snapshot sources.
-4. Add an optional Docker build feature argument and document artifact selection.
+4. Update the canonical container smoke contract for both valid recommendation
+   outcomes without statistical assertions.
 5. Update canonical `.ai` boundaries and sync generated guidance; run review/checks.
 
 ## 13. Testing Strategy
 Domain ordering/preferences, calibration failure, every snapshot, sampling
 rejection boundaries, HTTP 200/500, metadata noninterference, limits, health and
-readiness. Run format, all-target check, all-feature Clippy and tests with and
-without the feature. No statistical acceptance tests.
+readiness. Run format, all-target check, Clippy and the full test suite. No
+statistical acceptance tests.
 
 ## 14. Rollout / Migration Plan
-Default artifact retains baseline calibration. Build the separate artifact with
-`catalog-snapshots`; platform selects its immutable digest. Roll back to the prior
-image/default build. Legacy fault settings are ignored. No deployment in this task.
+The existing canonical main-push workflow publishes the release after its normal
+quality, smoke, vulnerability, provenance, and evidence gates. Roll back by
+selecting the previously published healthy digest. Legacy fault settings remain
+ignored. No deployment in this task.
 
 ## 15. Risks and Mitigations
 | Risk | Impact | Mitigation |
 | --- | --- | --- |
 | Workflow retries mask dependency failures | Different user-visible rate | Report per-attempt behavior only |
-| Wrong artifact selected | Unexpected availability | Explicit build feature and immutable digests |
+| Wrong digest selected | Unexpected availability | Use immutable publication and rollback digests |
 | Internal data exposed | Disclosure | Safe error envelope and bounded diagnostic class |
 
 ## 16. Done Criteria
@@ -81,21 +83,23 @@ Both paths proven without randomness in assertions, successful API contracts
 preserved, no runtime fault control, guidance synchronized, checks passing.
 
 ## 17. Review Checklist
-Verify dependency direction, metadata noninterference, error telemetry, default
-artifact behavior, deterministic tests and rollback documentation.
+Verify dependency direction, metadata noninterference, error telemetry,
+deterministic tests and rollback documentation.
 
 ## 18. Handoff Prompt for Implementation Agent
 Implement this plan within the existing Rust service. Preserve lifecycle and
-trace/correlation behavior. Run cargo fmt, check, Clippy and both feature test
-configurations. Keep deployment and interview explanations outside this repo.
+trace/correlation behavior. Run cargo fmt, check, Clippy and the full test suite.
+Keep deployment and interview explanations outside this repo.
 
 ## Verification
 
-- Default and `catalog-snapshots` builds: 52 tests passed in each configuration.
+- Canonical build: 52 tests passed.
 - Formatting, all-target check and all-feature Clippy with warnings denied passed.
-- Automation contracts: 10 tests passed.
-- Feature-enabled optimized binary: successful and safe failed responses observed;
+- Automation contracts: 13 tests passed.
+- Optimized binary: successful and safe failed responses observed;
   health, readiness, movie listing and SIGTERM shutdown verified locally.
 - Read-only architecture review: no material findings.
-- Default Docker artifact built successfully; container smoke verified health,
-  readiness, successful recommendations, retired controls and non-root runtime.
+- Canonical Docker artifact built successfully; container smoke verified health,
+  readiness, recommendation response contracts, retired controls and non-root runtime.
+- Existing canonical publication job, tag, scan, provenance and evidence identities
+  remain unchanged; no shared-action or environments contract changes are required.

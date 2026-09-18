@@ -61,8 +61,8 @@ target tree.
   in the domain. Domain failures must propagate through the application service
   and be mapped to safe responses at HTTP. Do not put random decisions, sleeps,
   runtime fault switches, or request-header parsing in recommendation rules.
-- Request-selected faults are retired. Alternate catalog data is selected by
-  the immutable artifact, never by caller metadata.
+- Request-selected faults are retired. Catalog snapshots are selected internally,
+  never by caller metadata.
 - Preserve W3C trace propagation and bounded request/correlation context at
   boundaries without coupling domain objects to OpenTelemetry.
 - Keep metric labels bounded and shutdown/telemetry flushing finite.
