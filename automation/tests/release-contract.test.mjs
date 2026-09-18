@@ -19,7 +19,7 @@ test("container smoke covers health and retired fault controls", () => {
   assert.match(smoke, /\/ready/);
   assert.match(smoke, /slow-recommendation/);
   assert.match(smoke, /recommendation-error/);
-  assert.match(smoke, /test "\$status" = "200"/);
+  assert.match(smoke, /validate-smoke-response.mjs/);
   assert.match(smoke, /docker exec .* id -u/);
 });
 
@@ -161,4 +161,12 @@ test("smoke, security and publication all select the Rust production target", ()
   assert.match(dockerfile, /apt-get upgrade -y --no-install-recommends/);
   assert.match(dockerfile, /ca-certificates curl tini/);
   assert.match(dockerfile, /COPY --from=build \/tmp\/movie-recommendation-service/);
+});
+
+test("canonical publication has one image identity and no build feature switch", () => {
+  assert.doesNotMatch(workflow, /catalog-snapshots|SERVICE_FEATURES/);
+  assert.doesNotMatch(dockerfile, /catalog-snapshots|SERVICE_FEATURES|--features/);
+  assert.equal((workflow.match(/push: true/g) ?? []).length, 1);
+  assert.equal((workflow.match(/Prepare canonical candidate/g) ?? []).length, 1);
+  assert.equal((workflow.match(/Attest and publish security evidence/g) ?? []).length, 1);
 });
