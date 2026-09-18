@@ -98,8 +98,8 @@ add bounded JSON data only. Export remains asynchronous and fail-open.
 
 ## 13. Testing Strategy
 
-Run focused telemetry and HTTP tests, then format, check, Clippy, all tests and
-both canonical catalog build configurations.
+Run focused telemetry and HTTP tests, then format, check, Clippy and all tests
+against the canonical catalog build.
 
 ## 14. Rollout / Migration Plan
 
