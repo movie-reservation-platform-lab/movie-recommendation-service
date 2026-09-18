@@ -1,8 +1,8 @@
 # Project AI Guidance
 
 This repository owns the standalone Rust/Axum movie recommendation API. It
-provides a small stable HTTP contract for the recommendation MCP, artifact-selected
-catalog data, and OpenTelemetry traces, metrics, and structured logs.
+provides a small stable HTTP contract for the recommendation MCP, catalog-based
+recommendation behavior, and OpenTelemetry traces, metrics, and structured logs.
 
 ## Implementation Provenance
 
@@ -60,8 +60,8 @@ before handoff.
   an explicit compatibility plan changes it.
 - Request-controlled faults are retired. Never restore header, query, or body
   overrides for catalog selection or recommendation outcomes.
-- Keep alternate catalog data behind the default-off `catalog-snapshots` build
-  feature. Environment/artifact selection belongs to the platform owner.
+- The canonical build samples catalog calibration snapshots for recommendation
+  attempts. Keep that selection internal and independent of request metadata.
 - Preserve W3C trace context and bounded correlation/request metadata.
 - Keep IDs, free text, and unbounded values out of metric labels.
 - Keep delivery/DORA telemetry outside service request telemetry.
@@ -83,7 +83,7 @@ before handoff.
 - Cover health/readiness, bounds/defaults, malformed input, catalog/ranking errors,
   trace/correlation parsing, and safe error responses.
 - Inject fixed calibration sources to test ranking outcomes; never rely on
-  statistical failure counts. Run tests with default and `catalog-snapshots` builds.
+  statistical failure counts.
 - Use paused Tokio time for deterministic delay/timeout behavior when supported.
 
 ## Safety

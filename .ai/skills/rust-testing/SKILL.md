@@ -41,7 +41,7 @@ deterministic catalog/error cases.
 
 - Invalid and extreme query inputs.
 - Every catalog snapshot, successful and failed ranking, metadata noninterference.
-- Both default and `catalog-snapshots` feature builds; no statistical assertions.
+- Canonical-build success and failure paths; no statistical assertions.
 - Missing or malformed propagation headers.
 - Telemetry disabled or exporter setup failure.
 - Graceful shutdown and health/readiness contracts where changed.

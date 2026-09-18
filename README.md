@@ -103,21 +103,18 @@ preference uses `error.code=invalid_preference`; other deserialization failures
 use `error.code=invalid_query`. Internal failures return HTTP 500 with
 `error.code=internal_error` and do not expose provider diagnostics.
 
-## Catalog artifacts
+## Catalog selection
 
-The default build uses baseline rating calibration. An alternate catalog artifact
-samples a calibration snapshot once per recommendation attempt:
+Each recommendation attempt samples one rating-calibration snapshot from the
+service catalog. A snapshot with no rating range causes ranking to fail through
+the normal service error path. Recommendation data errors return the existing
+safe HTTP 500 envelope; health, readiness, authentication, and movie listing are
+independent of ranking. Retries belong to callers.
 
-```sh
-cargo run --features catalog-snapshots
-docker build --build-arg SERVICE_FEATURES=catalog-snapshots \
-  -t movie-recommendation-service:catalog-snapshots .
-```
-
-Select the immutable image digest through the platform environment repository.
-Recovery uses the prior image or the default build. Recommendation data errors
-return the existing safe HTTP 500 envelope; health, readiness, authentication and
-movie listing are independent of ranking. Retries belong to callers.
+The canonical container build includes this catalog behavior. Publication keeps
+the existing immutable image, scan, provenance, and evidence contracts. Recovery
+selects the previously published healthy image digest through the platform
+environment repository.
 
 `X-Demo-Fault`, `DEMO_FAULT_MODE`, and `ALLOW_REQUEST_DEMO_FAULTS` are retired and
 ignored. Requests cannot select snapshots or change catalog behavior. The legacy
