@@ -105,19 +105,21 @@ use `error.code=invalid_query`. Internal failures return HTTP 500 with
 
 ## Catalog selection
 
-Each recommendation attempt samples one rating-calibration snapshot from the
-service catalog. A snapshot with no rating range causes ranking to fail through
-the normal service error path. Recommendation data errors return the existing
-safe HTTP 500 envelope; health, readiness, authentication, and movie listing are
-independent of ranking. Retries belong to callers.
+The normal build ranks every recommendation request with the baseline rating
+calibration, so ordinary traffic succeeds deterministically. Recommendation
+data errors still return the existing safe HTTP 500 envelope; health,
+readiness, authentication, and movie listing are independent of ranking.
+Retries belong to callers.
 
-The canonical container build includes this catalog behavior. Publication keeps
-the existing immutable image, scan, provenance, and evidence contracts. Recovery
-selects the previously published healthy image digest through the platform
-environment repository.
+Builds published between #16/#17 and #19 sampled one of 20 calibration
+snapshots per request; 11 had no rating range, so about 55 % of ordinary
+requests failed. That behavior is removed. Deliberate failed-release exercises
+use the separate `faulty-recommendations` build below. Recovery selects the
+previously published healthy image digest through the platform environment
+repository.
 
 `X-Demo-Fault`, `DEMO_FAULT_MODE`, and `ALLOW_REQUEST_DEMO_FAULTS` are retired and
-ignored. Requests cannot select snapshots or change catalog behavior. The legacy
+ignored. Requests cannot change catalog behavior. The legacy
 `fault` response field remains `none` for compatibility. Injected-fault counters,
 events and metric dimensions have been removed; request status/duration and
 ranking error spans describe failures.
