@@ -19,6 +19,8 @@ pub struct MovieRecommendation {
     pub movie_reservation_movie_id: Option<String>,
 }
 
+// The faulty build (#19) never serves this envelope. #20 moves it into `http`.
+#[cfg_attr(feature = "faulty-recommendations", allow(dead_code))]
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct RecommendationResponse {
     pub recommendations: Vec<MovieRecommendation>,

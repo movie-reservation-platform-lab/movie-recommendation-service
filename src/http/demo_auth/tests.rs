@@ -1,10 +1,11 @@
 use super::*;
 use crate::{
     audit::sink::{write_event, AuditSink},
-    services::movie::dummy::FakeMovieService,
-    telemetry::Telemetry,
     SERVICE_NAME,
 };
+// Used only by the test that the faulty build (#19) leaves out.
+#[cfg(not(feature = "faulty-recommendations"))]
+use crate::{services::movie::dummy::FakeMovieService, telemetry::Telemetry};
 use axum::{
     body::{to_bytes, Body},
     http::{HeaderValue, Request},
@@ -176,6 +177,8 @@ async fn correct_wrong_missing_and_malformed_credentials_are_audited_without_sec
     }
 }
 
+// Expects HTTP 200 from /recommendations, which the faulty build (#19) never serves.
+#[cfg(not(feature = "faulty-recommendations"))]
 #[tokio::test]
 async fn disabled_login_does_not_emit_and_existing_api_is_unchanged() {
     let _subscriber_guard = TELEMETRY_TEST_LOCK.lock().await;

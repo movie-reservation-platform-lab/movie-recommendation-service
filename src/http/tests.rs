@@ -34,6 +34,24 @@ async fn response_json(response: Response) -> Value {
     serde_json::from_slice(&body).unwrap()
 }
 
+/// Makes span-capturing tests independent of other tests running in parallel.
+///
+/// `tracing` caches, per callsite and process-wide, whether any subscriber is
+/// interested in a span. With at most one dispatcher registered, that answer
+/// comes from the *current thread's* subscriber. A parallel test with no
+/// subscriber can therefore cache `http.request` as "never", and a test that
+/// installed a capturing subscriber with `set_default` then sees no spans.
+/// A process-wide `Registry` makes every thread answer "interested", and the
+/// rebuild re-evaluates callsites that were cached before it was installed.
+/// Call this after `set_default` in every test that asserts on exported spans.
+fn keep_span_callsites_enabled_across_tests() {
+    static GLOBAL_SUBSCRIBER: std::sync::Once = std::sync::Once::new();
+    GLOBAL_SUBSCRIBER.call_once(|| {
+        let _ = tracing::subscriber::set_global_default(tracing_subscriber::registry());
+    });
+    tracing::callsite::rebuild_interest_cache();
+}
+
 #[tokio::test]
 async fn health_returns_stable_contract_and_context_headers() {
     let response = test_app().oneshot(get("/health")).await.unwrap();
@@ -76,6 +94,8 @@ async fn movies_use_default_and_explicit_limits() {
     );
 }
 
+// Expects successful recommendations, which the faulty build (#19) never serves.
+#[cfg(not(feature = "faulty-recommendations"))]
 #[tokio::test]
 async fn recommendations_use_default_and_explicit_limits() {
     let default_response = test_app().oneshot(get("/recommendations")).await.unwrap();
@@ -233,6 +253,8 @@ fn single_rating_calibration() -> crate::domain::recommendation::RatingCalibrati
     }
 }
 
+// Expects successful recommendations, which the faulty build (#19) never serves.
+#[cfg(not(feature = "faulty-recommendations"))]
 #[tokio::test(start_paused = true)]
 async fn request_metadata_cannot_select_or_bypass_ranking_outcomes() {
     use crate::domain::recommendation::RatingCalibration;
@@ -307,6 +329,7 @@ async fn ranking_failure_exports_correlated_error_spans() {
     let subscriber = tracing_subscriber::registry()
         .with(tracing_opentelemetry::layer().with_tracer(provider.tracer(SERVICE_NAME)));
     let _dispatcher = tracing::subscriber::set_default(subscriber);
+    keep_span_callsites_enabled_across_tests();
     let app = test_app_with(Arc::new(FakeMovieService::with_calibration(
         single_rating_calibration,
     )));
@@ -347,4 +370,102 @@ async fn ranking_failure_exports_correlated_error_spans() {
         .iter()
         .any(|attribute| attribute.key.as_str() == "error.type"
             && attribute.value.as_str() == "non_finite_score"));
+}
+
+/// Behavior of the deliberately faulty build (#19); compiled only with `faulty-recommendations`.
+#[cfg(feature = "faulty-recommendations")]
+mod faulty_build {
+    use super::*;
+
+    #[tokio::test]
+    async fn valid_recommendations_request_returns_safe_500() {
+        let response = test_app().oneshot(get("/recommendations")).await.unwrap();
+
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        let body = response_json(response).await;
+        assert_eq!(body["error"]["code"], "internal_error");
+        assert_eq!(body["error"]["message"], "Recommendation service failed");
+        assert_eq!(body["error"]["fault"], "none");
+        assert!(!body.to_string().contains("provider-secret"));
+    }
+
+    #[tokio::test]
+    async fn malformed_recommendations_query_still_returns_400() {
+        let response = test_app()
+            .oneshot(get("/recommendations?limit=not-a-number"))
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()["content-type"], "application/json");
+        let body = response_json(response).await;
+        assert_eq!(body["error"]["code"], "invalid_query");
+        assert_eq!(body["error"]["fault"], "none");
+    }
+
+    #[tokio::test]
+    async fn fault_happens_after_successful_ranking() {
+        use opentelemetry::trace::{Status, TracerProvider};
+        use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
+        use tracing_subscriber::prelude::*;
+        let exporter = InMemorySpanExporter::default();
+        let provider = SdkTracerProvider::builder()
+            .with_simple_exporter(exporter.clone())
+            .build();
+        let subscriber = tracing_subscriber::registry()
+            .with(tracing_opentelemetry::layer().with_tracer(provider.tracer(SERVICE_NAME)));
+        let _dispatcher = tracing::subscriber::set_default(subscriber);
+        keep_span_callsites_enabled_across_tests();
+        let app = test_app();
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/recommendations")
+                    .header(
+                        "traceparent",
+                        "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
+                    )
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        provider.force_flush().unwrap();
+        let spans = exporter.get_finished_spans().unwrap();
+        let http = spans
+            .iter()
+            .find(|span| span.name == "http.request")
+            .unwrap();
+        let rank = spans
+            .iter()
+            .find(|span| span.name == "recommendations.rank")
+            .unwrap();
+        assert_eq!(rank.parent_span_id, http.span_context.span_id());
+        assert!(
+            matches!(http.status, Status::Error { .. }),
+            "http.request status: {:?}",
+            http.status
+        );
+        assert_eq!(rank.status, Status::Unset);
+    }
+
+    /// ECS and ALB health checks must keep passing so canary traffic reaches
+    /// the faulty tasks.
+    #[tokio::test]
+    async fn health_checks_and_movies_stay_healthy() {
+        for (path, status) in [
+            ("/health", Some("ok")),
+            ("/ready", Some("ready")),
+            ("/movies", None),
+        ] {
+            let response = test_app().oneshot(get(path)).await.unwrap();
+
+            assert_eq!(response.status(), StatusCode::OK, "{path}");
+            if let Some(status) = status {
+                let body = response_json(response).await;
+                assert_eq!(body["status"], status, "{path}");
+            }
+        }
+    }
 }

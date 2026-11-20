@@ -4,8 +4,10 @@ pub(crate) mod demo_auth;
 #[cfg(test)]
 mod tests;
 
+#[cfg(not(feature = "faulty-recommendations"))]
+use crate::domain::movie::RecommendationResponse;
+
 use crate::{
-    domain::movie::RecommendationResponse,
     services::movie::movie_service::AsyncMovieService,
     telemetry::{HttpEventKind, HttpRequestEvent, Telemetry},
     SERVICE_NAME,
@@ -237,6 +239,7 @@ async fn get_recommendations(
         };
 
         let limit = bounded_limit(query.limit, DEFAULT_RECOMMENDATION_LIMIT);
+        #[cfg(not(feature = "faulty-recommendations"))]
         let preference_present = preference.is_some();
 
         match state
@@ -244,6 +247,18 @@ async fn get_recommendations(
             .get_recommendations(limit, preference)
             .await
         {
+            // Deliberate fault for the failed-release exercise (#19): ranking
+            // succeeded, but this build always answers 500. Only compiled with
+            // the `faulty-recommendations` feature.
+            #[cfg(feature = "faulty-recommendations")]
+            Ok(_) => internal_error_response(
+                &state.telemetry,
+                &context,
+                "/recommendations",
+                started_at.elapsed(),
+            ),
+
+            #[cfg(not(feature = "faulty-recommendations"))]
             Ok(recommendations) => {
                 let status = StatusCode::OK;
                 state

@@ -47,6 +47,8 @@ pub(crate) enum HttpEventKind {
     HealthCompleted,
     ReadinessCompleted,
     MoviesCompleted,
+    // The faulty build (#19) never completes a recommendations request.
+    #[cfg_attr(feature = "faulty-recommendations", allow(dead_code))]
     RecommendationsCompleted,
     RequestRejected,
     RequestFailed,
@@ -80,6 +82,8 @@ pub(crate) struct HttpRequestEvent<'a> {
 struct TelemetryMetrics {
     http_requests: Counter<u64>,
     http_request_duration: Histogram<f64>,
+    // The faulty build (#19) never records served recommendations.
+    #[cfg_attr(feature = "faulty-recommendations", allow(dead_code))]
     recommendations: Counter<u64>,
 }
 
@@ -206,6 +210,8 @@ impl Telemetry {
         ));
     }
 
+    // The faulty build (#19) never records served recommendations.
+    #[cfg_attr(feature = "faulty-recommendations", allow(dead_code))]
     pub fn record_recommendations(&self, count: usize, preference_present: bool) {
         self.metrics.recommendations.add(
             count as u64,
