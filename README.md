@@ -122,6 +122,32 @@ ignored. Requests cannot select snapshots or change catalog behavior. The legacy
 events and metric dimensions have been removed; request status/duration and
 ranking error spans describe failures.
 
+## Faulty release build
+
+The `faulty-recommendations` Cargo feature (off by default) builds a
+deliberately broken release for the failed-release exercise (#19):
+
+- Every valid `GET /recommendations` ranks normally, then returns the safe HTTP
+  500 envelope (`error.code=internal_error`). Telemetry records it as an
+  ordinary failure: the `http.request` span has status `ERROR`, the child
+  `recommendations.rank` span is not an error, and no recommendations metric is
+  recorded.
+- Malformed queries still return HTTP 400. `/health`, `/ready`, `/movies`, and
+  authentication behave exactly as in the default build, so health checks pass
+  and canary traffic reaches the faulty tasks.
+- The fault is chosen at compile time. The default binary contains none of the
+  fault code, and no environment variable, header, or request parameter can
+  turn it on or off. A faulty release is therefore a distinct artifact.
+
+This differs from runtime probabilistic faults (#15). Those affect a bounded
+share of ordinary traffic in one artifact and are selected at runtime. The
+faulty build fails all valid recommendation traffic, and it fails because of
+which artifact was built, not because of runtime state.
+
+```sh
+cargo test --all-targets --locked --features faulty-recommendations
+```
+
 ## Observability and Lifecycle
 
 Application lifecycle and completed-request records are emitted as one JSON
@@ -194,7 +220,9 @@ git branch --all --contains 3ea72f3
 cargo fmt --all -- --check
 cargo check --all-targets --locked
 cargo clippy --all-targets --all-features --locked -- -D warnings
+cargo clippy --all-targets --locked -- -D warnings
 cargo test --all-targets --locked
+cargo test --all-targets --locked --features faulty-recommendations
 cargo build --release --locked
 node --test automation/tests/*.test.mjs
 ```
