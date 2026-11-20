@@ -47,6 +47,10 @@ test("publication is canonical, gated, single-platform, and attested", () => {
 
 test("automation contract and Rust behavior tests stay in separate jobs", () => {
   assert.match(workflowJob("runtime-tests"), /cargo test --all-targets --locked/);
+  assert.match(
+    workflowJob("runtime-tests"),
+    /cargo test --all-targets --locked --features faulty-recommendations/,
+  );
   assert.doesNotMatch(workflowJob("runtime-tests"), /node --test/);
   assert.match(workflowJob("automation-contract"), /node --test automation\/tests/);
   assert.doesNotMatch(workflowJob("automation-contract"), /cargo test/);

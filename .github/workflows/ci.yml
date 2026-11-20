@@ -40,6 +40,10 @@ jobs:
       - name: Lint all targets and features
         run: cargo clippy --all-targets --all-features --locked -- -D warnings
 
+      # Features remove code with #[cfg], so the default build needs its own lint.
+      - name: Lint all targets with default features
+        run: cargo clippy --all-targets --locked -- -D warnings
+
   runtime-tests:
     name: runtime tests and release build
     runs-on: ubuntu-latest
@@ -56,6 +60,9 @@ jobs:
 
       - name: Run tests
         run: cargo test --all-targets --locked
+
+      - name: Run faulty-build tests
+        run: cargo test --all-targets --locked --features faulty-recommendations
 
       - name: Build release binary
         run: cargo build --release --locked
