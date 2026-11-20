@@ -1,4 +1,4 @@
-use super::catalog::{seed_movies, selected_calibration};
+use super::catalog::seed_movies;
 use crate::domain::{
     movie::{Movie, MovieRecommendation},
     recommendation::{rank_movies, RatingCalibration},
@@ -12,10 +12,12 @@ pub struct FakeMovieService {
     calibration: fn() -> RatingCalibration,
 }
 
+/// The normal build ranks with the baseline calibration on every request.
+/// Deliberate failures belong to the separate faulty build (#19).
 impl Default for FakeMovieService {
     fn default() -> Self {
         Self {
-            calibration: selected_calibration,
+            calibration: RatingCalibration::default,
         }
     }
 }
@@ -63,6 +65,17 @@ impl AsyncMovieService for FakeMovieService {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // The normal build must rank successfully on every request (#19, plan AC-14).
+    #[tokio::test]
+    async fn default_service_ranks_successfully_on_every_request() {
+        let service = FakeMovieService::default();
+
+        for _ in 0..1_000 {
+            let recommendations = service.get_recommendations(5, None).await.unwrap();
+            assert_eq!(recommendations.len(), 5);
+        }
+    }
 
     #[tokio::test]
     async fn fake_service_contains_sibling_demo_seed_titles() {
