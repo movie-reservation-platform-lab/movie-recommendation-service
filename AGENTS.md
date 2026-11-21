@@ -34,7 +34,8 @@ recommendation behavior, and OpenTelemetry traces, metrics, and structured logs.
 
 - Format: `cargo fmt --all -- --check`
 - Compile: `cargo check --all-targets`
-- Lint: `cargo clippy --all-targets --all-features -- -D warnings`
+- Lint default features: `cargo clippy --all-targets -- -D warnings`
+- Lint all features: `cargo clippy --all-targets --all-features -- -D warnings`
 - Tests: `cargo test --all-targets`
 - Build: `cargo build --release`
 
@@ -122,7 +123,7 @@ Read the relevant skill file from `.ai/skills/` when the task matches its descri
 - **principal-engineer-planner**: Use before implementation to inspect the repository, clarify requirements, compare alternatives, identify risks, and produce an implementation-ready plan under docs/plans/. (read `.ai/skills/principal-engineer-planner/SKILL.md`)
 - **programming-kb**: Use to retrieve focused local programming, backend architecture, system design, and implementation knowledge from /home/patex1987/Documents/programming_kb before broad internet search; validate externally when the user asks or the knowledge may be stale. (read `.ai/skills/programming-kb/SKILL.md`)
 - **rust-axum-service**: Use when implementing or reviewing Rust/Axum handlers, typed contracts, Tokio async behavior, errors, configuration, telemetry, and graceful shutdown. (read `.ai/skills/rust-axum-service/SKILL.md`)
-- **rust-testing**: Use when adding or reviewing Rust unit, Axum handler, async, catalog/ranking failure, telemetry-contract, and container-health tests. (read `.ai/skills/rust-testing/SKILL.md`)
+- **rust-testing**: Use for recommendation service tests, including Axum handlers, test doubles and fixtures, Cargo test-support features, telemetry contracts, and container health. (read `.ai/skills/rust-testing/SKILL.md`)
 
 ## AI Review Agents
 

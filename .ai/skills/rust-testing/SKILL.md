@@ -1,6 +1,6 @@
 ---
 name: rust-testing
-description: Use when creating, organizing, refactoring, reviewing, or explaining tests for this Rust recommendation service, including pure unit tests, in-process Axum handler tests, Tokio async and time tests, catalog/ranking failure cases, trace and metric contracts, and health/container behavior.
+description: Use when writing or reviewing Rust tests for this recommendation service, including Axum handlers, catalog and ranking failures, test doubles and fixtures, Cargo test-support features, paused Tokio time, telemetry contracts, and container health.
 ---
 
 # Rust Testing
@@ -21,6 +21,37 @@ deterministic catalog/error cases.
 - Smoke tests: start the built process/container separately to prove health,
   readiness, shutdown, and exporter configuration.
 
+## Test doubles and fixtures
+
+- Run real domain logic and application services. For an existing port with
+  shared ownership, inject a hand-written double through `Arc<dyn Port>`.
+- Use a **fake** for meaningful behaviour or state, such as a repository that
+  stores records. Use a **stub** for a fixed result or forced error.
+- Use a **spy** to record an outbound action, or a **mock** to check an expected
+  interaction, when that interaction is the contract. Consider a mocking crate
+  when repeated contract expectations would be harder to maintain by hand.
+- Give each test fresh state. Keep fixture builders and router setup local until
+  multiple modules use them. Share setup while keeping inputs and assertions
+  visible. Name production in-memory adapters for their role, such as
+  `InMemoryCatalog`, and reserve `FakeCatalog` for a test double.
+
+## Placement and ownership
+
+- Put tests that need private access in a child `#[cfg(test)] mod tests`.
+  Share helpers across unit modules through a crate-root `#[cfg(test)]`
+  support module. Keep test-only dependencies and features in dev-dependencies.
+- Put public library API or process tests in `tests/` and share their helpers
+  via `tests/support/mod.rs`. Integration crates cannot import private items
+  or binary internals. Keep binary-only router tests in the binary crate unless
+  there is a reason to expose a library API.
+- Publish a producer-owned fake when multiple consumers need the same stable
+  contract. Use a default-off feature and run common contract cases against the
+  fake and the real implementation. At an HTTP boundary, publish versioned
+  fixtures or schemas that the producer checks against its API. Consumers can
+  serve matching responses through a fake endpoint or in-process transport.
+- See [Test support](references/test-support.md) for a worked example, feature
+  gates, release verification, and the lint matrix.
+
 ## Determinism
 
 - Use table-driven cases for bounds, defaults, and catalog snapshot outcomes.
@@ -35,6 +66,8 @@ deterministic catalog/error cases.
 - Assert stable response correlation fields where public.
 - Test metric attribute construction as bounded data rather than relying on a
   live collector.
+- Capture emitted telemetry with an in-memory OpenTelemetry exporter or a scoped
+  tracing subscriber. Flush buffered exports before asserting the captured data.
 - Keep exporter integration as a separate smoke boundary.
 
 ## Failure Coverage
