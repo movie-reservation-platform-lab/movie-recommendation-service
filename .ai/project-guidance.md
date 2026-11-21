@@ -32,7 +32,8 @@ recommendation behavior, and OpenTelemetry traces, metrics, and structured logs.
 
 - Format: `cargo fmt --all -- --check`
 - Compile: `cargo check --all-targets`
-- Lint: `cargo clippy --all-targets --all-features -- -D warnings`
+- Lint default features: `cargo clippy --all-targets -- -D warnings`
+- Lint all features: `cargo clippy --all-targets --all-features -- -D warnings`
 - Tests: `cargo test --all-targets`
 - Build: `cargo build --release`
 
